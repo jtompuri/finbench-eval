@@ -45,8 +45,12 @@ pip install -r requirements.txt
 # 2. Add API keys
 cp .env.example .env
 # Edit .env and fill in your keys
+```
 
-# 3. Run a small test (5 items, ARC Challenge FI, GPT-5.4)
+### Frontier models (API)
+
+```bash
+# Run 5 items on ARC Challenge FI with GPT-5.4
 source .env
 python scripts/run_frontier_jsonl.py \
     --provider openai \
@@ -56,14 +60,56 @@ python scripts/run_frontier_jsonl.py \
     --subset arc_challenge_fi \
     --n 5 \
     --verbose
-
-# 4. Score the output
-python scripts/score_eval.py \
-    --input outputs/test_openai.jsonl \
-    --output results/raw/test_openai.json
 ```
 
-For local models (Apple Silicon / MLX):
+Supported `--provider` values:
+
+| Provider | Description |
+|---|---|
+| `openai` | OpenAI Chat Completions (e.g. GPT-5.4) |
+| `openai-thinking` | OpenAI Responses API with reasoning (CoT) |
+| `anthropic` | Anthropic Messages API (e.g. Claude Sonnet 4.6) |
+| `anthropic-thinking` | Anthropic extended thinking (CoT) |
+| `google` | Google Gemini via AI Studio |
+| `openrouter` | OpenRouter — unified access to third-party models |
+
+Batch submission (50 % cost reduction, ~24 h turnaround) is supported for
+`openai` and `anthropic`:
+
+```bash
+# Submit batch
+python scripts/run_frontier_jsonl.py \
+    --provider anthropic --model-id claude-sonnet-4-6 \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_anthropic.jsonl \
+    --batch
+
+# Check status
+python scripts/run_frontier_jsonl.py \
+    --provider anthropic \
+    --output outputs/combined_anthropic.jsonl \
+    --batch-status
+
+# Fetch results when complete
+python scripts/run_frontier_jsonl.py \
+    --provider anthropic --model-id claude-sonnet-4-6 \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_anthropic.jsonl \
+    --batch-fetch
+```
+
+For `google` and `openrouter`, use `--concurrency` instead of `--batch`:
+
+```bash
+python scripts/run_frontier_jsonl.py \
+    --provider google --model-id gemini-3-flash \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_google.jsonl \
+    --concurrency 5
+```
+
+### Local models (Apple Silicon / MLX)
+
 ```bash
 python scripts/run_eval_jsonl.py \
     --model mlx-community/gemma-4-e4b-it-4bit \
@@ -73,22 +119,38 @@ python scripts/run_eval_jsonl.py \
     --verbose
 ```
 
+### Scoring
+
+```bash
+python scripts/score_eval.py \
+    --input outputs/test_openai.jsonl \
+    --output results/raw/test_openai.json
+```
+
 ---
 
 ## Data
 
-**Evaluation dataset:** Download from Hugging Face and place in `data/`:
-```python
-from datasets import load_dataset
-# Individual tasks available under TurkuNLP/finbenchv2-*
-```
-The fixed 1,146-item evaluation subset (`data/finbench_combined_v1.jsonl`)
-is included in this repository.
+**Evaluation dataset:** The fixed 1,146-item evaluation subset
+(`data/finbench_combined_v1.jsonl`) is included in this repository.
+Individual task datasets are available under
+[TurkuNLP/finbenchv2-*](https://huggingface.co/TurkuNLP) on Hugging Face.
 
 **Scored outputs:** All model responses and scores are published at
 [jtompuri/finbench-eval-outputs](https://huggingface.co/datasets/jtompuri/finbench-eval-outputs)
 on Hugging Face Datasets. This enables error analysis, new metrics
 (e.g. LLM-as-a-judge), and reproduction without re-running API calls.
+
+To export and upload your own scored outputs:
+
+```bash
+python scripts/export_hf_dataset.py \
+    --out-dir hf_export \
+    --outputs-dir outputs \
+    --scores-dir results/raw \
+    --push \
+    --repo your-username/your-dataset-repo
+```
 
 ---
 
@@ -96,25 +158,24 @@ on Hugging Face Datasets. This enables error analysis, new metrics
 
 ```
 scripts/
-    eval_config.py          # Baselines and normalisation formula
+    run_frontier_jsonl.py   # Run frontier API models (OpenAI, Anthropic, Google, OpenRouter)
+    run_eval_jsonl.py       # Run local MLX models (Apple Silicon)
+    frontier_adapters.py    # Provider abstraction + API adapters (single-call & batch)
     score_eval.py           # Scoring: accuracy, F1, Wilson CI
+    eval_config.py          # Task baselines and normalisation formula
     normalize_answer.py     # Answer extraction (MCF letter/word, generative)
+    export_hf_dataset.py    # Export scored outputs to Hugging Face Datasets format
     aggregate_results.py    # Aggregate per-task scores → tidy CSV
-    run_frontier_jsonl.py   # Run frontier API models
-    run_eval_jsonl.py       # Run local MLX models
-    frontier_adapters.py    # API adapters (OpenAI, Anthropic, Google)
     plot_figures.py         # Reproduce all paper figures
     plot_style.py           # Shared matplotlib style
+    build_subset_jsonl.py   # Build evaluation subsets from raw task data
+    run_mlx_prompt.py       # Single-prompt MLX runner (smoke tests)
     compute_bertscore_squad.py  # BERTScore validation for SQuAD FI
     analysis/
-        final_summary.py    # Per-model summary table
-        compare_runs.py     # Pairwise run comparison
-        mcnemar_test.py     # McNemar significance tests (BH-corrected)
-        analysis_normalized.py
-
-report/
-    draft_v1.tex            # Full paper source (ACL format)
-    references.bib
+        final_summary.py        # Per-model summary table
+        compare_runs.py         # Pairwise run comparison
+        mcnemar_test.py         # McNemar significance tests (BH-corrected)
+        analysis_normalized.py  # Normalised score analysis
 
 data/
     finbench_combined_v1.jsonl   # Fixed 1,146-item evaluation subset
