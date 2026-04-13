@@ -108,7 +108,7 @@ python scripts/run_frontier_jsonl.py \
     --concurrency 5
 ```
 
-### Local models (Apple Silicon / MLX)
+### Local models — Apple Silicon (MLX)
 
 ```bash
 python scripts/run_eval_jsonl.py \
@@ -117,6 +117,48 @@ python scripts/run_eval_jsonl.py \
     --output outputs/test_gemma4e4b.jsonl \
     --n 5 \
     --verbose
+```
+
+### Local models — Windows / Linux / Intel Mac (llama.cpp / GGUF)
+
+Install llama-cpp-python for your hardware:
+
+```bash
+# CPU only (no GPU required)
+pip install llama-cpp-python
+
+# NVIDIA GPU
+CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall
+
+# AMD GPU (Vulkan)
+CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --force-reinstall
+```
+
+Download a GGUF model from Hugging Face:
+
+```bash
+pip install huggingface_hub
+huggingface-cli download bartowski/gemma-3-27b-it-GGUF \
+    --include "gemma-3-27b-it-Q4_K_M.gguf" --local-dir ./models
+```
+
+Run evaluation:
+
+```bash
+# GPU (all layers offloaded, default)
+python scripts/run_llama_jsonl.py \
+    --model models/gemma-3-27b-it-Q4_K_M.gguf \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/test_gemma3_llama.jsonl \
+    --n 5 --verbose
+
+# CPU only
+python scripts/run_llama_jsonl.py \
+    --model models/gemma-3-27b-it-Q4_K_M.gguf \
+    --n-gpu-layers 0 \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/test_gemma3_cpu.jsonl \
+    --n 5 --verbose
 ```
 
 ### Scoring
@@ -160,6 +202,7 @@ python scripts/export_hf_dataset.py \
 scripts/
     run_frontier_jsonl.py   # Run frontier API models (OpenAI, Anthropic, Google, OpenRouter)
     run_eval_jsonl.py       # Run local MLX models (Apple Silicon)
+    run_llama_jsonl.py      # Run local GGUF models via llama.cpp (Windows / Linux / Intel Mac)
     frontier_adapters.py    # Provider abstraction + API adapters (single-call & batch)
     score_eval.py           # Scoring: accuracy, F1, Wilson CI
     eval_config.py          # Task baselines and normalisation formula
@@ -170,6 +213,7 @@ scripts/
     plot_style.py           # Shared matplotlib style
     build_subset_jsonl.py   # Build evaluation subsets from raw task data
     run_mlx_prompt.py       # Single-prompt MLX runner (smoke tests)
+    run_llama_prompt.py     # Single-prompt llama.cpp runner (smoke tests)
     compute_bertscore_squad.py  # BERTScore validation for SQuAD FI
     analysis/
         final_summary.py        # Per-model summary table

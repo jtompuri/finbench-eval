@@ -9,6 +9,13 @@ google-generativeai>=0.7.0
 # --- Local inference (Apple Silicon / MLX) ---
 mlx-lm>=0.14.0
 
+# --- Local inference (GGUF / llama-cpp-python — Windows, Linux, Intel Mac) ---
+# CPU-only install:   pip install llama-cpp-python
+# NVIDIA GPU (CUDA):  CMAKE_ARGS="-DGGML_CUDA=on"    pip install llama-cpp-python --force-reinstall
+# Apple Metal:        CMAKE_ARGS="-DGGML_METAL=on"   pip install llama-cpp-python --force-reinstall
+# AMD Vulkan:         CMAKE_ARGS="-DGGML_VULKAN=on"  pip install llama-cpp-python --force-reinstall
+# llama-cpp-python>=0.2.90
+
 # --- Evaluation and scoring ---
 bert-score>=0.3.12
 scipy>=1.12.0
@@ -23,6 +30,7 @@ matplotlib>=3.8.0
 
 # --- Environment ---
 python-dotenv>=1.0.0
+PyYAML>=6.0
 
 # --- Optional: CUDA / Hugging Face Transformers backend ---
 # transformers>=4.40.0
