@@ -70,6 +70,12 @@ def main():
                         help="Enable chain-of-thought for models that support it (e.g. Gemma 4). "
                              "Thinking tokens are stored in a separate 'thinking' field; "
                              "'response' always contains only the final answer.")
+    parser.add_argument("--n", type=int, default=None,
+                        help="Limit to first N items after optional --subset filter "
+                             "(useful for smoke tests, e.g. --n 5)")
+    parser.add_argument("--subset", default=None,
+                        help="Run only items whose 'task' field matches this value "
+                             "(e.g. --subset arc_challenge_fi)")
     parser.add_argument("--resume", action="store_true",
                         help="Skip items already present in the output file (resume interrupted run)")
     args = parser.parse_args()
@@ -80,6 +86,15 @@ def main():
         else settings.get("generation", {}).get("temperature", 0.0)
 
     items = load_jsonl(args.input)
+    if args.subset:
+        items = [it for it in items if it.get("task") == args.subset]
+        if not items:
+            print(f"ERROR: no items found for --subset '{args.subset}'", file=sys.stderr)
+            sys.exit(1)
+        print(f"Subset '{args.subset}': {len(items)} items")
+    if args.n is not None:
+        items = items[:args.n]
+        print(f"Limiting to first {len(items)} items (--n {args.n})")
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

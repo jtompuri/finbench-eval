@@ -236,6 +236,12 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--resume", action="store_true",
                         help="Skip items already present in the output file")
+    parser.add_argument("--n", type=int, default=None,
+                        help="Limit to first N items after optional --subset filter "
+                             "(useful for smoke tests, e.g. --n 5)")
+    parser.add_argument("--subset", default=None,
+                        help="Run only items whose 'task' field matches this value "
+                             "(e.g. --subset arc_challenge_fi)")
     parser.add_argument("--verbose", action="store_true",
                         help="Print per-item response and running MCF accuracy. "
                              "Recommended for long terminal runs.")
@@ -400,6 +406,15 @@ def main():
         parser.error("--model-id is required")
 
     items = load_jsonl(args.input)
+    if args.subset:
+        items = [it for it in items if it.get("task") == args.subset]
+        if not items:
+            print(f"ERROR: no items found for --subset '{args.subset}'", file=sys.stderr)
+            sys.exit(1)
+        print(f"Subset '{args.subset}': {len(items)} items")
+    if args.n is not None:
+        items = items[:args.n]
+        print(f"Limiting to first {len(items)} items (--n {args.n})")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Resume: filter already-completed items
