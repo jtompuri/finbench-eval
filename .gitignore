@@ -9,6 +9,9 @@ outputs/
 results/raw/
 hf_export/
 
+# Local model files (GGUF and MLX) — download separately, never commit
+models/
+
 # LaTeX build artefacts
 *.aux
 *.bbl
