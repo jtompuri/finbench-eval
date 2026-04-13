@@ -1,9 +1,16 @@
 # Model definitions for FIN-bench-v2 evaluation pipeline
 #
-# local_models: models run via run_eval_jsonl.py (MLX on Apple Silicon)
-#   - path: absolute path to the local model directory
-#   - runtime: currently only "mlx_lm" is supported
+# local_models: models run via local inference scripts
+#   - path: absolute path to the model file or directory
+#   - runtime: "mlx_lm" (Apple Silicon) or "llama_cpp" (Windows/Linux/Intel Mac)
 #   - model_key: used to resolve max_tokens from run_settings.yaml
+#
+#   mlx_lm  → run_eval_jsonl.py  — requires Apple Silicon (M-series)
+#              path points to a model directory (mlx-community format)
+#
+#   llama_cpp → run_llama_jsonl.py — works on Windows, Linux, Intel Mac,
+#               and Apple Silicon; supports NVIDIA/AMD/CPU via --n-gpu-layers
+#               path points to a single .gguf file
 #
 # frontier_models: models run via run_frontier_jsonl.py (API providers)
 #   - model_id: identifier passed to the provider API
@@ -11,29 +18,49 @@
 #   - env_var: environment variable holding the API key (set in .env)
 
 local_models:
-  gemma4:
-    label: "Gemma 4 26B (4-bit)"
+  # --- Apple Silicon (MLX) ---
+  gemma4_mlx:
+    label: "Gemma 4 26B (4-bit, MLX)"
     path: "/path/to/your/models/gemma-4-26b-it-4bit"   # update to your local path
     runtime: mlx_lm
-    notes: "Download from mlx-community/gemma-4-26b-it-4bit on Hugging Face"
+    model_key: gemma4
+    notes: "Download: huggingface-cli download mlx-community/gemma-4-26b-it-4bit"
 
-  gemma3:
-    label: "Gemma 3 27B IT (QAT 4-bit)"
+  gemma3_mlx:
+    label: "Gemma 3 27B IT (QAT 4-bit, MLX)"
     path: "/path/to/your/models/gemma-3-27b-it-qat-4bit"   # update to your local path
     runtime: mlx_lm
-    notes: "Download from mlx-community/gemma-3-27b-it-qat-4bit on Hugging Face"
+    model_key: default
+    notes: "Download: huggingface-cli download mlx-community/gemma-3-27b-it-qat-4bit"
 
-  gemma4e4b:
-    label: "Gemma 4 E4B (4-bit)"
+  gemma4e4b_mlx:
+    label: "Gemma 4 E4B (4-bit, MLX)"
     path: "/path/to/your/models/gemma-4-e4b-it-4bit"   # update to your local path
     runtime: mlx_lm
-    notes: "Download from mlx-community/gemma-4-e4b-it-4bit on Hugging Face"
+    model_key: gemma4e4b
+    notes: "Download: huggingface-cli download mlx-community/gemma-4-e4b-it-4bit"
 
-  poro8b:
-    label: "Llama-Poro-2-8B-Instruct (4-bit)"
+  poro8b_mlx:
+    label: "Llama-Poro-2-8B-Instruct (4-bit, MLX)"
     path: "/path/to/your/models/Llama-Poro-2-8B-Instruct-mlx-4Bit"   # update to your local path
     runtime: mlx_lm
-    notes: "Finnish-English bilingual model. Download from LumiOpen/Llama-Poro-2-8B-Instruct"
+    model_key: poro8b
+    notes: "Download: huggingface-cli download LumiOpen/Llama-Poro-2-8B-Instruct-mlx-4Bit"
+
+  # --- Windows / Linux / Intel Mac (llama.cpp / GGUF) ---
+  gemma3_gguf:
+    label: "Gemma 3 27B IT (Q4_K_M, GGUF)"
+    path: "/path/to/your/models/gemma-3-27b-it-Q4_K_M.gguf"   # update to your local path
+    runtime: llama_cpp
+    model_key: default
+    notes: "Download: huggingface-cli download bartowski/gemma-3-27b-it-GGUF --include 'gemma-3-27b-it-Q4_K_M.gguf'"
+
+  poro8b_gguf:
+    label: "Llama-Poro-2-8B-Instruct (Q4_K_M, GGUF)"
+    path: "/path/to/your/models/Llama-Poro-2-8B-Instruct-Q4_K_M.gguf"   # update to your local path
+    runtime: llama_cpp
+    model_key: poro8b
+    notes: "Download: huggingface-cli download LumiOpen/Llama-Poro-2-8B-Instruct-GGUF --include '*Q4_K_M*'"
 
 frontier_models:
   # Model IDs are the strings passed directly to each provider's API.
