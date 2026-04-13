@@ -266,6 +266,21 @@ def main():
     temperature = args.temperature
 
     # -----------------------------------------------------------------------
+    # Temperature safety check for thinking providers
+    # The OpenAI Responses API and Anthropic extended thinking both require
+    # temperature=1.0 and ignore any other value. Warn if the user passes
+    # a different value so they are not surprised by the effective setting.
+    # -----------------------------------------------------------------------
+    THINKING_PROVIDERS = {"openai-thinking", "anthropic-thinking"}
+    if args.provider in THINKING_PROVIDERS and temperature != 1.0:
+        print(
+            f"NOTE: {args.provider} requires temperature=1.0 "
+            f"(you passed {temperature}). Overriding to 1.0.",
+            file=sys.stderr,
+        )
+        temperature = 1.0
+
+    # -----------------------------------------------------------------------
     # --batch-status: show status of existing batch
     # -----------------------------------------------------------------------
     if args.batch_status:

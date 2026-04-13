@@ -1,0 +1,30 @@
+# Runtime settings for FIN-bench-v2 evaluation pipeline
+
+generation:
+  temperature: 0.0
+  # max_tokens is model-specific.
+  # Gemma 4 uses 150-400 tokens for chain-of-thought before the final answer;
+  # Gemma 3 answers directly and stops at EOS well within the default cap.
+  # Frontier models use conservative caps; squad_fi (gen) may need more headroom.
+  max_tokens:
+    default: 512        # Gemma 3 and any model without thinking blocks
+    gemma4: 1024        # Gemma 4: ~400-600 thinking + ~50-100 answer headroom
+    openai: 512         # OpenAI: MCF answers are short; squad_fi may need 256+
+    anthropic: 1024     # Anthropic: extended thinking capable; leave headroom
+    google: 512         # Google Gemini: MCF answers are short (non-thinking models)
+    google_thinking: 8192  # Gemini 2.5 Pro and other thinking models: thinking consumes tokens first
+    poro8b: 512           # Llama-Poro-2-8B-Instruct: short MCF answers; squad_fi may need a bit more
+    gemma4e4b: 512        # Gemma 4 E4B-it: thinking disabled, short MCF answers
+    gemma4e4b_think: 4096 # Gemma 4 E4B-it: thinking enabled, needs budget for CoT + answer
+
+paths:
+  output_dir: outputs
+  result_dir: results
+
+normalization:
+  # Strip leading/trailing whitespace before comparison
+  strip_whitespace: true
+  # Lowercase before comparison (for tasks where case is not meaningful)
+  lowercase: false
+  # Remove common Finnish punctuation artifacts before exact-match comparison
+  strip_punctuation: false

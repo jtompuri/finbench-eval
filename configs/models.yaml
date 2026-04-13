@@ -1,0 +1,77 @@
+# Model definitions for FIN-bench-v2 evaluation pipeline
+#
+# local_models: models run via run_eval_jsonl.py (MLX on Apple Silicon)
+#   - path: absolute path to the local model directory
+#   - runtime: currently only "mlx_lm" is supported
+#   - model_key: used to resolve max_tokens from run_settings.yaml
+#
+# frontier_models: models run via run_frontier_jsonl.py (API providers)
+#   - model_id: identifier passed to the provider API
+#   - runtime: corresponds to --provider in run_frontier_jsonl.py
+#   - env_var: environment variable holding the API key (set in .env)
+
+local_models:
+  gemma4:
+    label: "Gemma 4 26B (4-bit)"
+    path: "/path/to/your/models/gemma-4-26b-it-4bit"   # update to your local path
+    runtime: mlx_lm
+    notes: "Download from mlx-community/gemma-4-26b-it-4bit on Hugging Face"
+
+  gemma3:
+    label: "Gemma 3 27B IT (QAT 4-bit)"
+    path: "/path/to/your/models/gemma-3-27b-it-qat-4bit"   # update to your local path
+    runtime: mlx_lm
+    notes: "Download from mlx-community/gemma-3-27b-it-qat-4bit on Hugging Face"
+
+  gemma4e4b:
+    label: "Gemma 4 E4B (4-bit)"
+    path: "/path/to/your/models/gemma-4-e4b-it-4bit"   # update to your local path
+    runtime: mlx_lm
+    notes: "Download from mlx-community/gemma-4-e4b-it-4bit on Hugging Face"
+
+  poro8b:
+    label: "Llama-Poro-2-8B-Instruct (4-bit)"
+    path: "/path/to/your/models/Llama-Poro-2-8B-Instruct-mlx-4Bit"   # update to your local path
+    runtime: mlx_lm
+    notes: "Finnish-English bilingual model. Download from LumiOpen/Llama-Poro-2-8B-Instruct"
+
+frontier_models:
+  # Model IDs are the strings passed directly to each provider's API.
+  openai:
+    label: "GPT-5.4"
+    model_id: gpt-5.4
+    runtime: openai          # --provider openai
+    env_var: OPENAI_API_KEY
+
+  openai_thinking:
+    label: "GPT-5.4 (CoT)"
+    model_id: gpt-5.4
+    runtime: openai-thinking  # --provider openai-thinking
+    env_var: OPENAI_API_KEY
+    notes: "Uses Responses API with reasoning; temperature is fixed at 1.0"
+
+  anthropic:
+    label: "Claude Sonnet 4.6"
+    model_id: claude-sonnet-4-6
+    runtime: anthropic        # --provider anthropic
+    env_var: ANTHROPIC_API_KEY
+
+  anthropic_thinking:
+    label: "Claude Sonnet 4.6 (CoT)"
+    model_id: claude-sonnet-4-6
+    runtime: anthropic-thinking  # --provider anthropic-thinking
+    env_var: ANTHROPIC_API_KEY
+    notes: "Extended thinking enabled; temperature is fixed at 1.0"
+
+  google:
+    label: "Gemini 3 Flash"
+    model_id: gemini-3-flash
+    runtime: google           # --provider google
+    env_var: GOOGLE_API_KEY
+
+  google_pro:
+    label: "Gemini 3.1 Pro"
+    model_id: gemini-3.1-pro-preview
+    runtime: openrouter       # --provider openrouter (no daily quota)
+    env_var: OPENROUTER_API_KEY
+    notes: "Route via OpenRouter to avoid Google AI Studio per-day limits"
