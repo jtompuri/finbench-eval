@@ -13,11 +13,5 @@ hf_export/
 # Local model files (GGUF and MLX) — download separately, never commit
 models/
 
-# LaTeX build artefacts
-*.aux
-*.bbl
-*.blg
-*.out
-*.fls
-*.fdb_latexmk
-report/out/
+# Report — publish manually when ready; keep out of Git until then
+report/
