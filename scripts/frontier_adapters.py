@@ -236,7 +236,7 @@ def run_anthropic_prompt(
     max_tokens: int = 1024,
     temperature: float = 0.0,
 ) -> dict:
-    """Run a single prompt through the Anthropic Messages API."""
+    """Run a single prompt through the Anthropic Messages API (standard, no thinking)."""
     try:
         import anthropic
     except ImportError:
@@ -261,6 +261,56 @@ def run_anthropic_prompt(
             "model": model_id,
             "response": response,
             "generation_kwargs": _gen_kwargs(max_tokens, temperature),
+            "elapsed_s": elapsed,
+        }
+
+    return _retry(_call)
+
+
+def run_anthropic_thinking_prompt(
+    prompt: str,
+    model_id: str,
+    max_tokens: int = 2048,
+    temperature: float = 1.0,  # required for extended thinking; value is ignored
+) -> dict:
+    """
+    Run a single prompt through the Anthropic Messages API with extended thinking.
+
+    budget_tokens is hardcoded to 1024 (minimum allowed); max_tokens must be > budget_tokens.
+    temperature must be 1 for extended thinking — the value passed here is ignored.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        raise ImportError("anthropic package required: pip install anthropic")
+
+    BUDGET_TOKENS = 1024
+    if max_tokens <= BUDGET_TOKENS:
+        max_tokens = BUDGET_TOKENS + 512
+
+    client = anthropic.Anthropic(api_key=_require_env("ANTHROPIC_API_KEY"))
+
+    def _call():
+        t0 = time.time()
+        message = client.messages.create(
+            model=model_id,
+            max_tokens=max_tokens,
+            temperature=1,
+            thinking={"type": "enabled", "budget_tokens": BUDGET_TOKENS},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        elapsed = round(time.time() - t0, 3)
+        text_blocks = [b for b in (message.content or [])
+                       if getattr(b, "type", None) == "text"]
+        response = text_blocks[0].text if text_blocks else ""
+        return {
+            "model": model_id,
+            "response": response,
+            "generation_kwargs": {
+                "max_tokens": max_tokens,
+                "temperature": 1,
+                "thinking_budget_tokens": BUDGET_TOKENS,
+            },
             "elapsed_s": elapsed,
         }
 
@@ -760,3 +810,173 @@ def run_google_concurrent(
         print(f"WARNING: {n_errors}/{len(results_unordered)} items failed after retries.")
 
     return results_unordered
+
+
+# ---------------------------------------------------------------------------
+# Provider abstraction
+# ---------------------------------------------------------------------------
+
+class Provider:
+    """
+    Abstract base class for API provider adapters.
+
+    Each concrete subclass wraps the low-level adapter functions above and
+    exposes a uniform interface so that run_frontier_jsonl.py can dispatch
+    without per-provider if/elif chains.
+    """
+
+    #: True if the provider supports asynchronous batch submission.
+    supports_batch: bool = False
+
+    def call_single(
+        self,
+        prompt: str,
+        model_id: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> dict:
+        """Run one prompt and return the standard result dict."""
+        raise NotImplementedError
+
+    def call_batch_submit(
+        self,
+        items: list,
+        model_id: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> dict:
+        """Submit a batch job and return metadata dict."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not support batch submission")
+
+    def poll_batch(self, batch_id: str) -> dict:
+        """Return current batch status dict."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not support batch polling")
+
+    def fetch_batch(self, batch_id: str, output_file_id: str | None = None) -> list:
+        """Download completed batch results as a list of partial records."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not support batch fetch")
+
+    def batch_is_complete(self, status: dict) -> bool:
+        """Return True when the batch has finished processing (success or failure)."""
+        raise NotImplementedError
+
+    def batch_is_failed(self, status: dict) -> bool:
+        """Return True when the batch ended in a terminal failure state."""
+        return False
+
+
+class OpenAIProvider(Provider):
+    """Standard OpenAI Chat Completions (no reasoning)."""
+
+    supports_batch = True
+
+    def call_single(self, prompt, model_id, max_tokens, temperature):
+        return run_openai_prompt(prompt, model_id, max_tokens, temperature)
+
+    def call_batch_submit(self, items, model_id, max_tokens, temperature):
+        return submit_openai_batch(items, model_id, max_tokens, temperature)
+
+    def poll_batch(self, batch_id):
+        return poll_openai_batch(batch_id)
+
+    def fetch_batch(self, batch_id, output_file_id=None):
+        return fetch_openai_batch(batch_id, output_file_id)
+
+    def batch_is_complete(self, status):
+        return status.get("status") == "completed"
+
+    def batch_is_failed(self, status):
+        return status.get("status") in {"failed", "cancelled", "expired"}
+
+
+class OpenAIThinkingProvider(Provider):
+    """OpenAI Responses API with reasoning enabled (GPT-5.4 CoT)."""
+
+    supports_batch = False   # no batch endpoint for Responses API
+
+    def call_single(self, prompt, model_id, max_tokens, temperature):
+        return run_openai_thinking_prompt(prompt, model_id, max_tokens, temperature)
+
+
+class AnthropicProvider(Provider):
+    """Standard Anthropic Messages API (no extended thinking)."""
+
+    supports_batch = True
+
+    def call_single(self, prompt, model_id, max_tokens, temperature):
+        return run_anthropic_prompt(prompt, model_id, max_tokens, temperature)
+
+    def call_batch_submit(self, items, model_id, max_tokens, temperature):
+        return submit_anthropic_batch(items, model_id, max_tokens, temperature)
+
+    def poll_batch(self, batch_id):
+        return poll_anthropic_batch(batch_id)
+
+    def fetch_batch(self, batch_id, output_file_id=None):
+        return fetch_anthropic_batch(batch_id)
+
+    def batch_is_complete(self, status):
+        return status.get("status") == "ended"
+
+
+class AnthropicThinkingProvider(Provider):
+    """Anthropic Messages API with extended thinking (Claude CoT)."""
+
+    supports_batch = True
+
+    def call_single(self, prompt, model_id, max_tokens, temperature):
+        return run_anthropic_thinking_prompt(prompt, model_id, max_tokens, temperature)
+
+    def call_batch_submit(self, items, model_id, max_tokens, temperature):
+        return submit_anthropic_thinking_batch(items, model_id, max_tokens, temperature)
+
+    def poll_batch(self, batch_id):
+        return poll_anthropic_batch(batch_id)
+
+    def fetch_batch(self, batch_id, output_file_id=None):
+        return fetch_anthropic_batch(batch_id)
+
+    def batch_is_complete(self, status):
+        return status.get("status") == "ended"
+
+
+class GoogleProvider(Provider):
+    """Google Gemini via AI Studio (concurrent calls only — no batch endpoint)."""
+
+    supports_batch = False
+
+    def call_single(self, prompt, model_id, max_tokens, temperature):
+        return run_google_prompt(prompt, model_id, max_tokens, temperature)
+
+
+class OpenRouterProvider(Provider):
+    """OpenRouter API — OpenAI-compatible endpoint for third-party models."""
+
+    supports_batch = False
+
+    def call_single(self, prompt, model_id, max_tokens, temperature):
+        return run_openrouter_prompt(prompt, model_id, max_tokens, temperature)
+
+
+#: Registry mapping CLI provider names to Provider instances.
+PROVIDER_REGISTRY: dict[str, Provider] = {
+    "openai":               OpenAIProvider(),
+    "openai-thinking":      OpenAIThinkingProvider(),
+    "anthropic":            AnthropicProvider(),
+    "anthropic-thinking":   AnthropicThinkingProvider(),
+    "google":               GoogleProvider(),
+    "openrouter":           OpenRouterProvider(),
+}
+
+
+def get_provider(name: str) -> Provider:
+    """
+    Return the Provider instance for the given CLI name.
+
+    Raises ValueError for unknown names so callers get a clear error
+    instead of a confusing AttributeError.
+    """
+    if name not in PROVIDER_REGISTRY:
+        available = ", ".join(sorted(PROVIDER_REGISTRY))
+        raise ValueError(f"Unknown provider '{name}'. Available: {available}")
+    return PROVIDER_REGISTRY[name]

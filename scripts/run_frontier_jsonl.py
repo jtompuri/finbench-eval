@@ -279,14 +279,12 @@ def main():
         print(f"Model    : {meta['model_id']}")
         print(f"Submitted: {meta['submitted_at']}")
         print(f"Items    : {meta['n_items']}")
-        if provider == "openai":
-            status = fa.poll_openai_batch(meta["batch_id"])
-        elif provider == "anthropic":
-            status = fa.poll_anthropic_batch(meta["batch_id"])
-        else:
+        prov = fa.get_provider(provider)
+        if not prov.supports_batch:
             print(f"ERROR: --batch-status not supported for provider '{provider}'",
                   file=sys.stderr)
             sys.exit(1)
+        status = prov.poll_batch(meta["batch_id"])
         print(f"Status   : {status['status']}")
         print(f"Counts   : {status.get('request_counts', {})}")
         return
@@ -311,40 +309,33 @@ def main():
         item_by_id = build_item_lookup(items)
 
         print(f"Fetching batch {meta['batch_id']} ...")
-        if provider == "openai":
-            status = fa.poll_openai_batch(meta["batch_id"])
-            openai_terminal_failures = {"failed", "cancelled", "expired"}
-            if status["status"] in openai_terminal_failures:
-                print(f"ERROR: Batch ended with terminal status '{status['status']}' — "
-                      f"it will never complete.", file=sys.stderr)
-                print(f"Counts: {status.get('request_counts', {})}", file=sys.stderr)
-                print("Delete the batch metadata file and re-submit to try again.",
-                      file=sys.stderr)
-                sys.exit(1)
-            if status["status"] != "completed":
-                print(f"Batch not yet completed. Status: {status['status']}")
-                print(f"Counts: {status.get('request_counts', {})}")
-                sys.exit(0)
-            if not status.get("output_file_id"):
-                print("ERROR: Batch status is 'completed' but output_file_id is missing. "
-                      "The batch may have failed entirely.", file=sys.stderr)
-                sys.exit(1)
-            results = fa.fetch_openai_batch(meta["batch_id"], status["output_file_id"])
-        elif provider == "anthropic":
-            status = fa.poll_anthropic_batch(meta["batch_id"])
-            if status["status"] != "ended":
-                print(f"Batch not yet ended. Status: {status['status']}")
-                print(f"Counts: {status.get('request_counts', {})}")
-                sys.exit(0)
-            rc = status.get("request_counts", {})
-            if rc.get("succeeded", 1) == 0 and rc.get("errored", 0) > 0:
-                print(f"WARNING: All {rc['errored']} batch items errored. "
-                      f"Results will be empty.", file=sys.stderr)
-            results = fa.fetch_anthropic_batch(meta["batch_id"])
-        else:
+        prov = fa.get_provider(provider)
+        if not prov.supports_batch:
             print(f"ERROR: --batch-fetch not supported for provider '{provider}'",
                   file=sys.stderr)
             sys.exit(1)
+        status = prov.poll_batch(meta["batch_id"])
+        if prov.batch_is_failed(status):
+            print(f"ERROR: Batch ended with terminal status '{status['status']}' — "
+                  f"it will never complete.", file=sys.stderr)
+            print(f"Counts: {status.get('request_counts', {})}", file=sys.stderr)
+            print("Delete the batch metadata file and re-submit to try again.",
+                  file=sys.stderr)
+            sys.exit(1)
+        if not prov.batch_is_complete(status):
+            print(f"Batch not yet complete. Status: {status['status']}")
+            print(f"Counts: {status.get('request_counts', {})}")
+            sys.exit(0)
+        output_file_id = status.get("output_file_id")
+        if provider == "openai" and not output_file_id:
+            print("ERROR: Batch status is 'completed' but output_file_id is missing. "
+                  "The batch may have failed entirely.", file=sys.stderr)
+            sys.exit(1)
+        rc = status.get("request_counts", {})
+        if rc.get("succeeded", 1) == 0 and rc.get("errored", 0) > 0:
+            print(f"WARNING: All {rc['errored']} batch items errored. "
+                  f"Results will be empty.", file=sys.stderr)
+        results = prov.fetch_batch(meta["batch_id"], output_file_id=output_file_id)
 
         run_meta = {
             "provider": provider,
@@ -413,7 +404,8 @@ def main():
     # --batch: submit batch job (OpenAI / Anthropic)
     # -----------------------------------------------------------------------
     if args.batch:
-        if args.provider in ("google", "openrouter"):
+        prov = fa.get_provider(args.provider)
+        if not prov.supports_batch:
             print(
                 f"NOTE: {args.provider} has no batch endpoint. "
                 "Use --concurrency 8 (or higher) for concurrent calls instead.",
@@ -426,12 +418,7 @@ def main():
             print("  To start over:    delete the metadata file and re-run")
             sys.exit(1)
 
-        if args.provider == "openai":
-            meta = fa.submit_openai_batch(pending, args.model_id, max_tokens, temperature)
-        elif args.provider == "anthropic-thinking":
-            meta = fa.submit_anthropic_thinking_batch(pending, args.model_id, max_tokens, temperature)
-        else:
-            meta = fa.submit_anthropic_batch(pending, args.model_id, max_tokens, temperature)
+        meta = prov.call_batch_submit(pending, args.model_id, max_tokens, temperature)
 
         save_meta(meta, meta_path)
         print(f"\nNext steps:")
@@ -460,31 +447,10 @@ def main():
         item_by_id = build_item_lookup(pending)
 
         # Build per-provider call function
-        if args.provider == "google":
-            def _call_item(item):
-                return fa.run_google_prompt(
-                    item["prompt"], args.model_id, max_tokens, temperature
-                )
-        elif args.provider == "openai":
-            def _call_item(item):
-                return fa.run_openai_prompt(
-                    item["prompt"], args.model_id, max_tokens, temperature
-                )
-        elif args.provider == "openai-thinking":
-            def _call_item(item):
-                return fa.run_openai_thinking_prompt(
-                    item["prompt"], args.model_id, max_tokens, temperature
-                )
-        elif args.provider == "openrouter":
-            def _call_item(item):
-                return fa.run_openrouter_prompt(
-                    item["prompt"], args.model_id, max_tokens, temperature
-                )
-        else:
-            def _call_item(item):
-                return fa.run_anthropic_prompt(
-                    item["prompt"], args.model_id, max_tokens, temperature
-                )
+        prov = fa.get_provider(args.provider)
+
+        def _call_item(item):
+            return prov.call_single(item["prompt"], args.model_id, max_tokens, temperature)
 
         gen_kw = _gen_kwargs_safe(max_tokens, temperature)
 
@@ -536,16 +502,8 @@ def main():
         max_tokens, temperature, "sequential",
     )
 
-    if args.provider == "openai":
-        call_fn = lambda p: fa.run_openai_prompt(p, args.model_id, max_tokens, temperature)
-    elif args.provider == "openai-thinking":
-        call_fn = lambda p: fa.run_openai_thinking_prompt(p, args.model_id, max_tokens, temperature)
-    elif args.provider == "anthropic":
-        call_fn = lambda p: fa.run_anthropic_prompt(p, args.model_id, max_tokens, temperature)
-    elif args.provider == "openrouter":
-        call_fn = lambda p: fa.run_openrouter_prompt(p, args.model_id, max_tokens, temperature)
-    else:
-        call_fn = lambda p: fa.run_google_prompt(p, args.model_id, max_tokens, temperature)
+    prov = fa.get_provider(args.provider)
+    call_fn = lambda p: prov.call_single(p, args.model_id, max_tokens, temperature)
 
     stats = LiveStats() if args.verbose else None
     open_mode = "a" if completed_ids else "w"
