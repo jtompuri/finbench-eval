@@ -68,7 +68,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
 from tqdm import tqdm
+
+# Load API keys from .env in the repo root.
+# override=True ensures .env values are used even if the variable is already
+# set (e.g. as an empty string from a partial shell source).
+load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 sys.path.insert(0, str(Path(__file__).parent))
 import frontier_adapters as fa
