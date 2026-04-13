@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.DS_Store
+
+# Outputs and large data files — publish via HF Datasets instead
+outputs/
+results/raw/
+
+# LaTeX build artefacts
+*.aux
+*.bbl
+*.blg
+*.out
+*.fls
+*.fdb_latexmk
+report/out/

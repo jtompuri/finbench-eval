@@ -1,0 +1,29 @@
+# FIN-bench-eval dependencies
+# Install with: pip install -r requirements.txt
+
+# --- Frontier API clients ---
+openai>=1.30.0
+anthropic>=0.28.0
+google-generativeai>=0.7.0
+
+# --- Local inference (Apple Silicon / MLX) ---
+mlx-lm>=0.14.0
+
+# --- Evaluation and scoring ---
+bert-score>=0.3.12
+scipy>=1.12.0
+
+# --- Data and analysis ---
+pandas>=2.2.0
+pyarrow>=16.0.0       # for scores.parquet
+tqdm>=4.66.0
+
+# --- Plotting ---
+matplotlib>=3.8.0
+
+# --- Environment ---
+python-dotenv>=1.0.0
+
+# --- Optional: CUDA / Hugging Face Transformers backend ---
+# transformers>=4.40.0
+# torch>=2.2.0
