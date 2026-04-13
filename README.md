@@ -37,15 +37,26 @@ baseline. Mean over 11 tasks (SQuAD excluded from aggregate).
 ## Quickstart
 
 ```bash
-# 1. Clone and install
+# 1. Clone
 git clone https://github.com/jtompuri/finbench-eval.git
 cd finbench-eval
+
+# 2. Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate        # macOS / Linux
+# .venv\Scripts\activate         # Windows
+
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# 2. Add API keys
+# 4. Add API keys
 cp .env.example .env
 # Edit .env and fill in your keys
 ```
+
+> **Note:** `mlx-lm` (required for Apple Silicon local inference) installs only
+> on macOS with an M-series chip. On other platforms, comment out the `mlx-lm`
+> line in `requirements.txt` before running `pip install`.
 
 ### Frontier models (API)
 
