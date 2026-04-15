@@ -43,6 +43,7 @@ def load_model(
     tensor_parallel_size: int = 1,
     gpu_memory_utilization: float = 0.90,
     max_model_len: int = 8192,
+    trust_remote_code: bool = False,
     verbose: bool = False,
 ):
     """
@@ -53,6 +54,8 @@ def load_model(
         and KV cache (default: 0.90). Lower if you run out of VRAM.
     max_model_len: maximum sequence length (prompt + response). vLLM
         allocates KV cache dynamically up to this limit.
+    trust_remote_code: allow executing code from the model repository
+        (default: False). Enable only for models that require it.
     """
     try:
         from vllm import LLM
@@ -66,7 +69,7 @@ def load_model(
         tensor_parallel_size=tensor_parallel_size,
         gpu_memory_utilization=gpu_memory_utilization,
         max_model_len=max_model_len,
-        trust_remote_code=True,
+        trust_remote_code=trust_remote_code,
         disable_log_stats=not verbose,
     )
 
@@ -89,7 +92,10 @@ def _format_prompt(
                 add_generation_prompt=True,
                 **kwargs,
             )
-        except Exception:
+        except (TypeError, KeyError):
+            # apply_chat_template raises TypeError when an unknown kwarg is passed
+            # (e.g. enable_thinking on a model whose template doesn't support it).
+            # Fall through to retry without the extra kwarg.
             continue
     return prompt
 
@@ -227,6 +233,8 @@ def main():
                         help="Disable chat template — use raw prompt (base models)")
     parser.add_argument("--enable-thinking", action="store_true",
                         help="Enable chain-of-thought thinking for supported models (e.g. Gemma 4)")
+    parser.add_argument("--trust-remote-code", action="store_true",
+                        help="Allow executing code from the model repository (use with caution)")
     args = parser.parse_args()
 
     llm = load_model(
@@ -234,6 +242,7 @@ def main():
         tensor_parallel_size=args.tensor_parallel_size,
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=args.max_model_len,
+        trust_remote_code=args.trust_remote_code,
         verbose=True,
     )
     result = run_prompt(

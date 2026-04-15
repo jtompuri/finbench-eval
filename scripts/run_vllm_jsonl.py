@@ -176,6 +176,8 @@ def main():
                         help="Enable chain-of-thought thinking for supported models (e.g. Gemma 4). "
                              "Thinking tokens are stored in a separate 'thinking' field; "
                              "the final answer is extracted into 'response'.")
+    parser.add_argument("--trust-remote-code", action="store_true",
+                        help="Allow executing code from the model repository (use with caution)")
     parser.add_argument("--n", type=int, default=None,
                         help="Limit to first N items (useful for smoke tests)")
     parser.add_argument("--verbose", action="store_true",
@@ -226,6 +228,7 @@ def main():
         tensor_parallel_size=args.tensor_parallel_size,
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=args.max_model_len,
+        trust_remote_code=args.trust_remote_code,
     )
 
     use_chat_template = not args.no_chat_template
@@ -242,6 +245,7 @@ def main():
         "max_model_len": args.max_model_len,
         "use_chat_template": use_chat_template,
         "enable_thinking": enable_thinking,
+        "batch_mode": args.batch,
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -264,7 +268,9 @@ def main():
                 use_chat_template=use_chat_template,
                 enable_thinking=enable_thinking,
             )
-            for item, result in zip(pending, batch_results):
+            pbar = tqdm(zip(pending, batch_results), total=len(pending),
+                        desc=Path(args.model).name)
+            for item, result in pbar:
                 record = {**item, **result, "run_meta": run_meta}
                 out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
                 n_done += 1
