@@ -325,25 +325,27 @@ python scripts/run_vllm_jsonl.py \
     --output outputs/test_gemma4e4b_vllm.jsonl \
     --n 5 --verbose
 
-# Full run — sequential (per-item flush, supports --resume)
+# Full run — sequential (per-item flush, safest, supports --resume)
 python scripts/run_vllm_jsonl.py \
     --model google/gemma-4-e4b-it \
     --input data/finbench_combined_v1.jsonl \
     --output outputs/combined_gemma4e4b_vllm.jsonl
 
-# Full run — batch mode (all prompts in one generate() call, maximum GPU throughput)
+# Full run — chunked batch (recommended: throughput + safety)
+# Submits 100 prompts per generate() call, flushes after each chunk.
+# Supports --resume — at most 100 items are lost if the run is interrupted.
+python scripts/run_vllm_jsonl.py \
+    --model google/gemma-4-e4b-it \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_gemma4e4b_vllm.jsonl \
+    --batch-size 100 --resume
+
+# Full run — full batch (all prompts in one call, no intermediate saves)
 python scripts/run_vllm_jsonl.py \
     --model google/gemma-4-e4b-it \
     --input data/finbench_combined_v1.jsonl \
     --output outputs/combined_gemma4e4b_vllm.jsonl \
     --batch
-
-# Resume an interrupted sequential run
-python scripts/run_vllm_jsonl.py \
-    --model google/gemma-4-e4b-it \
-    --input data/finbench_combined_v1.jsonl \
-    --output outputs/combined_gemma4e4b_vllm.jsonl \
-    --resume
 
 # Multi-GPU (tensor parallelism)
 python scripts/run_vllm_jsonl.py \
@@ -353,11 +355,20 @@ python scripts/run_vllm_jsonl.py \
     --tensor-parallel-size 2
 ```
 
+Three inference modes (mutually exclusive):
+
+| Mode | Flag | Flush | Resume | Use when |
+|---|---|---|---|---|
+| Sequential | *(default)* | after every item | ✓ | development, small runs |
+| Chunked batch | `--batch-size N` | after every N items | ✓ | **recommended for full runs** |
+| Full batch | `--batch` | at the end | ✗ | short smoke tests only |
+
 Key options:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--batch` | off | Submit all prompts in one `generate()` call (faster, no per-item flush) |
+| `--batch-size N` | — | Prompts per `generate()` call; flush after each chunk (recommended: 50–200) |
+| `--batch` | off | All prompts in one `generate()` call — no intermediate saves |
 | `--tensor-parallel-size N` | 1 | Number of GPUs for tensor parallelism |
 | `--gpu-memory-utilization F` | 0.90 | Fraction of GPU memory for model + KV cache |
 | `--max-model-len N` | 8192 | Maximum sequence length (prompt + response) |
