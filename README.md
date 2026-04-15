@@ -206,11 +206,13 @@ CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --no-binary llama-cpp
 pip install llama-cpp-python
 ```
 
-Verify GPU support after install:
+Verify GPU support after install by loading a model and checking the output:
 
 ```bash
-python -c "from llama_cpp import llama_cpp as _lib; print('CUDA:', getattr(_lib, 'GGML_USE_CUDA', False))"
+python -c "from llama_cpp import Llama; Llama(model_path='models/google_gemma-4-E4B-it-Q4_K_M.gguf', n_gpu_layers=-1, verbose=True)" 2>&1 | grep -iE "cuda|gpu|metal|offload|device"
 ```
+
+If CUDA is active you will see lines such as `llm_load_tensors: using CUDA`.
 
 Install remaining dependencies (comment out `mlx-lm` on Linux/Windows first):
 
