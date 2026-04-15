@@ -155,6 +155,16 @@ class TestExtractMcfWord:
         text = "<|channel>thought\nnegatiivinen\n<channel|>Vastaus: neutraali"
         assert extract_mcf_word(text, CHOICES) == "neutraali"
 
+    def test_markdown_bold_choice(self):
+        # llama.cpp GGUF models often wrap the answer in **bold**
+        # e.g. "Tekstin aihe on **positiivinen**."
+        text = "Tunnelma on **positiivinen**."
+        assert extract_mcf_word(text, CHOICES) == "positiivinen"
+
+    def test_markdown_bold_in_sentence(self):
+        text = "Vastauksen mukaan teksti on **negatiivinen** sävyltään."
+        assert extract_mcf_word(text, CHOICES) == "negatiivinen"
+
 
 # ---------------------------------------------------------------------------
 # token_f1
