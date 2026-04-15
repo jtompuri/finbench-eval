@@ -121,14 +121,53 @@ python scripts/run_frontier_jsonl.py \
 
 ### Local models — Apple Silicon (MLX)
 
+`run_eval_jsonl.py` uses [mlx-lm](https://github.com/ml-explore/mlx-examples/tree/main/llms)
+and requires an Apple M-series chip. Models are downloaded automatically from
+Hugging Face on first use — no separate download step needed.
+
+> **Platform:** macOS with Apple Silicon (M1 or later) only. On other
+> platforms, remove or comment out the `mlx-lm` line in `requirements.txt`
+> before running `pip install -r requirements.txt`.
+
+Install mlx-lm:
+
 ```bash
+pip install mlx-lm
+```
+
+Run evaluation:
+
+```bash
+# Smoke test — 5 items with live accuracy output
 python scripts/run_eval_jsonl.py \
     --model mlx-community/gemma-4-e4b-it-4bit \
     --input data/finbench_combined_v1.jsonl \
     --output outputs/test_gemma4e4b.jsonl \
-    --n 5 \
-    --verbose
+    --n 5 --verbose
+
+# Full run
+python scripts/run_eval_jsonl.py \
+    --model mlx-community/gemma-4-e4b-it-4bit \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_gemma4e4b.jsonl
+
+# Resume an interrupted run
+python scripts/run_eval_jsonl.py \
+    --model mlx-community/gemma-4-e4b-it-4bit \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_gemma4e4b.jsonl \
+    --resume
 ```
+
+Models used in this study (all from [mlx-community](https://huggingface.co/mlx-community)):
+
+| Model | HF repo | Size |
+|---|---|---|
+| Gemma 4 E4B | `mlx-community/gemma-4-e4b-it-4bit` | ~3 GB |
+| Gemma 4 26B | `mlx-community/gemma-4-26b-it-4bit` | ~15 GB |
+| Gemma 3 27B | `mlx-community/gemma-3-27b-it-qat-4bit` | ~15 GB |
+| Llama 3.1 8B | `mlx-community/Meta-Llama-3.1-8B-Instruct-4bit` | ~5 GB |
+| Poro-8B | `aciidix/Llama-Poro-2-8B-Instruct-mlx-4Bit` | ~5 GB |
 
 ### Local models — llama.cpp / GGUF (Apple Silicon · NVIDIA · AMD · CPU)
 
