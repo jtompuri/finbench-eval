@@ -51,19 +51,20 @@ cp .env.example .env
 # Edit .env and fill in your keys
 ```
 
-> **Platform note:** use the requirements file for your platform:
+> **Choose your requirements file based on platform:**
 > - **Frontier API models only:** `pip install -r requirements.txt`
 > - **Apple Silicon (MLX):** `pip install -r requirements-mlx.txt`
-> - **NVIDIA / AMD / CPU (llama.cpp):** install llama-cpp-python first, then `pip install -r requirements-cuda.txt` — see [llama.cpp section](#local-models--llamacpp--gguf-apple-silicon--nvidia--amd--cpu)
+> - **NVIDIA / AMD / CPU (llama.cpp):** install llama-cpp-python first, then
+>   `pip install -r requirements-cuda.txt` — see the [llama.cpp section](#local-models--llamacpp--gguf-apple-silicon--nvidia--amd--cpu) below
+
+---
 
 ### Frontier models (API)
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Run 5 items on ARC Challenge FI with GPT-5.4
 source .env
+
 python scripts/run_frontier_jsonl.py \
     --provider openai \
     --model-id gpt-5.4 \
@@ -120,19 +121,19 @@ python scripts/run_frontier_jsonl.py \
     --concurrency 5
 ```
 
+---
+
 ### Local models — Apple Silicon (MLX)
 
 `run_eval_jsonl.py` uses [mlx-lm](https://github.com/ml-explore/mlx-examples/tree/main/llms)
 and requires an Apple M-series chip. Models are downloaded automatically from
-Hugging Face on first use — no separate download step needed.
+Hugging Face on first use.
 
 > **Platform:** macOS with Apple Silicon (M1 or later) only.
 
 ```bash
 pip install -r requirements-mlx.txt
 ```
-
-Run evaluation:
 
 ```bash
 # Smoke test — 5 items with live accuracy output
@@ -166,6 +167,8 @@ Models used in this study (all from [mlx-community](https://huggingface.co/mlx-c
 | Llama 3.1 8B | `mlx-community/Meta-Llama-3.1-8B-Instruct-4bit` | ~5 GB |
 | Poro-8B | `aciidix/Llama-Poro-2-8B-Instruct-mlx-4Bit` | ~5 GB |
 
+---
+
 ### Local models — llama.cpp / GGUF (Apple Silicon · NVIDIA · AMD · CPU)
 
 `run_llama_jsonl.py` uses [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)
@@ -174,7 +177,8 @@ and supports any platform that can run GGUF models.
 #### Step 1 — Platform prerequisites
 
 **macOS:** llama-cpp-python requires **Python 3.14+**. Python 3.13 (conda /
-miniconda) causes a silent crash at model load time.
+miniconda) causes a silent crash at model load time. Create a fresh virtual
+environment with Python 3.14 instead of the one from Quickstart:
 
 ```bash
 brew install python@3.14
@@ -182,7 +186,7 @@ python3.14 -m venv .venv
 source .venv/bin/activate
 ```
 
-**Linux (Ubuntu + NVIDIA):** Install build tools and verify GPU before proceeding:
+**Linux (Ubuntu + NVIDIA):** Install build tools and verify the GPU is visible:
 
 ```bash
 sudo apt-get install -y cmake build-essential nvidia-cuda-toolkit
@@ -190,9 +194,9 @@ nvcc --version   # confirm CUDA is available
 nvidia-smi       # confirm GPU is visible
 ```
 
-#### Step 2 — Install llama-cpp-python with GPU support
+#### Step 2 — Install llama-cpp-python
 
-Install llama-cpp-python **before** `pip install -r requirements.txt`.
+Install llama-cpp-python **before** `pip install -r requirements-cuda.txt`.
 
 **Apple Silicon — Metal:**
 
@@ -228,7 +232,7 @@ CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --no-binary llama-cpp
 pip install llama-cpp-python
 ```
 
-#### Step 3 — Install remaining dependencies
+#### Step 3 — Install dependencies
 
 ```bash
 pip install -r requirements-cuda.txt
@@ -298,12 +302,14 @@ python scripts/run_llama_jsonl.py \
     --output outputs/combined_gemma4e4b_cpu.jsonl
 ```
 
+---
+
 ### Scoring
 
 ```bash
 python scripts/score_eval.py \
-    --input outputs/test_openai.jsonl \
-    --output results/raw/test_openai.json
+    --input outputs/combined_gemma4e4b_llama.jsonl \
+    --output results/raw/score_gemma4e4b_llama_combined.json
 ```
 
 ---
