@@ -12,11 +12,25 @@ pre-allocation needed. Models are loaded directly from Hugging Face.
 
 Platform: Linux + NVIDIA CUDA only. Not supported on macOS or AMD.
 
-Usage — full dataset:
+Usage — full dataset (sequential, flush after every item):
     python scripts/run_vllm_jsonl.py \\
         --model google/gemma-4-e4b-it \\
         --input data/finbench_combined_v1.jsonl \\
         --output outputs/combined_gemma4e4b_vllm.jsonl
+
+Usage — chunked batch (recommended for throughput + safety):
+    python scripts/run_vllm_jsonl.py \\
+        --model google/gemma-4-e4b-it \\
+        --input data/finbench_combined_v1.jsonl \\
+        --output outputs/combined_gemma4e4b_vllm.jsonl \\
+        --batch-size 100
+
+Usage — full batch (maximum throughput, no intermediate saves):
+    python scripts/run_vllm_jsonl.py \\
+        --model google/gemma-4-e4b-it \\
+        --input data/finbench_combined_v1.jsonl \\
+        --output outputs/combined_gemma4e4b_vllm.jsonl \\
+        --batch
 
 Usage — small test run (5 items, verbose):
     python scripts/run_vllm_jsonl.py \\
@@ -34,6 +48,7 @@ Usage — resume interrupted run:
 """
 import argparse
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,6 +66,29 @@ from runner_utils import (
     resolve_max_tokens,
     resolve_temperature,
 )
+
+
+def _log_items(stats, out_f, items, results, n_done_start, n_total, flush):
+    """Write a chunk of results, log verbose output, and optionally flush."""
+    n_done = n_done_start
+    for item, result in zip(items, results):
+        record = {**item, **result, "run_meta": _log_items._run_meta}
+        out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        n_done += 1
+        if stats is not None:
+            result_str  = stats.update(item, result.get("response", ""))
+            elapsed     = result.get("elapsed_s")
+            elapsed_str = f"  {elapsed:.1f}s" if elapsed else ""
+            tqdm.write(
+                f"[{n_done:>4}/{n_total}] {item.get('id', '?'):<40} "
+                f"{result_str}{elapsed_str}"
+            )
+            if n_done % SUMMARY_EVERY == 0:
+                for line in stats.summary_lines():
+                    tqdm.write(line)
+    if flush:
+        out_f.flush()
+    return n_done
 
 
 def main():
@@ -88,10 +126,17 @@ def main():
                         help="Print per-item response and running MCF accuracy")
     parser.add_argument("--resume", action="store_true",
                         help="Skip items already present in the output file")
-    parser.add_argument("--batch", action="store_true",
-                        help="Submit all prompts in a single vLLM generate() call for maximum "
-                             "GPU throughput via continuous batching. Results are written after "
-                             "the full batch completes — intermediate saving is not available.")
+
+    batch_group = parser.add_mutually_exclusive_group()
+    batch_group.add_argument("--batch", action="store_true",
+                             help="Submit all prompts in a single vLLM generate() call. "
+                                  "Maximum throughput, but no intermediate saves. "
+                                  "Prefer --batch-size for long runs.")
+    batch_group.add_argument("--batch-size", type=int, default=None, metavar="N",
+                             help="Submit prompts in chunks of N per vLLM generate() call. "
+                                  "Combines continuous-batching throughput with per-chunk "
+                                  "flushing to disk — safe to resume if the run is interrupted. "
+                                  "Recommended: 50–200 for a single GPU.")
     args = parser.parse_args()
 
     settings    = load_run_settings()
@@ -134,6 +179,15 @@ def main():
 
     use_chat_template = not args.no_chat_template
     enable_thinking   = args.enable_thinking
+
+    # Determine effective batch mode for run_meta
+    if args.batch:
+        batch_mode_label = "full"
+    elif args.batch_size:
+        batch_mode_label = f"chunked/{args.batch_size}"
+    else:
+        batch_mode_label = "sequential"
+
     run_meta = {
         "model":                  args.model,
         "model_key":              args.model_key,
@@ -146,73 +200,75 @@ def main():
         "max_model_len":          args.max_model_len,
         "use_chat_template":      use_chat_template,
         "enable_thinking":        enable_thinking,
-        "batch_mode":             args.batch,
+        "batch_mode":             batch_mode_label,
         "started_at":             datetime.now(timezone.utc).isoformat(),
     }
+
+    # Pass run_meta to the helper via a function attribute (avoids extra param)
+    _log_items._run_meta = run_meta
 
     stats     = LiveStats() if args.verbose else None
     open_mode = "a" if completed_ids else "w"
     n_done    = len(completed_ids)
     n_total   = len(completed_ids) + len(pending)
 
+    shared_kwargs = dict(
+        model_path=args.model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        use_chat_template=use_chat_template,
+        enable_thinking=enable_thinking,
+    )
+
     with open(output_path, open_mode, encoding="utf-8") as out_f:
 
         if args.batch:
-            # --- Batch mode: submit all prompts at once for continuous batching ---
+            # ---------------------------------------------------------------
+            # Full batch mode: all prompts in one generate() call
+            # ---------------------------------------------------------------
             print(f"Batch mode: submitting {len(pending)} prompts to vLLM in one call...")
-            batch_results = run_batch(
+            results = run_batch(
                 llm,
                 prompts=[it.get("prompt", "") for it in pending],
-                model_path=args.model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                use_chat_template=use_chat_template,
-                enable_thinking=enable_thinking,
+                **shared_kwargs,
             )
-            pbar = tqdm(zip(pending, batch_results), total=len(pending),
+            pbar = tqdm(zip(pending, results), total=len(pending),
                         desc=Path(args.model).name)
-            for item, result in pbar:
-                record = {**item, **result, "run_meta": run_meta}
-                out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
-                n_done += 1
-                if stats is not None:
-                    result_str  = stats.update(item, result.get("response", ""))
-                    elapsed     = result.get("elapsed_s")
-                    elapsed_str = f"  {elapsed:.1f}s" if elapsed else ""
-                    tqdm.write(
-                        f"[{n_done:>4}/{n_total}] {item.get('id', '?'):<40} "
-                        f"{result_str}{elapsed_str}"
-                    )
+            n_done = _log_items(stats, out_f, pending, results,
+                                n_done, n_total, flush=False)
+            out_f.flush()
+
+        elif args.batch_size:
+            # ---------------------------------------------------------------
+            # Chunked batch mode: N prompts per generate(), flush after each
+            # ---------------------------------------------------------------
+            chunk_size = args.batch_size
+            n_chunks   = math.ceil(len(pending) / chunk_size)
+            print(f"Chunked batch mode: {len(pending)} prompts in "
+                  f"{n_chunks} chunk(s) of ≤{chunk_size}")
+            pbar = tqdm(total=len(pending), desc=Path(args.model).name)
+            for i in range(0, len(pending), chunk_size):
+                chunk   = pending[i : i + chunk_size]
+                results = run_batch(
+                    llm,
+                    prompts=[it.get("prompt", "") for it in chunk],
+                    **shared_kwargs,
+                )
+                n_done = _log_items(stats, out_f, chunk, results,
+                                    n_done, n_total, flush=True)
+                pbar.update(len(chunk))
+            pbar.close()
 
         else:
-            # --- Sequential mode: one prompt at a time, flush after each ---
+            # ---------------------------------------------------------------
+            # Sequential mode: one prompt at a time, flush after each
+            # ---------------------------------------------------------------
             pbar = tqdm(pending, desc=Path(args.model).name)
             for item in pbar:
-                result = run_prompt(
-                    llm,
-                    prompt=item.get("prompt", ""),
-                    model_path=args.model,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    use_chat_template=use_chat_template,
-                    enable_thinking=enable_thinking,
-                )
-                record = {**item, **result, "run_meta": run_meta}
-                out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
-                out_f.flush()
-                n_done += 1
-
-                if stats is not None:
-                    result_str  = stats.update(item, result.get("response", ""))
-                    elapsed     = result.get("elapsed_s")
-                    elapsed_str = f"  {elapsed:.1f}s" if elapsed else ""
-                    tqdm.write(
-                        f"[{n_done:>4}/{n_total}] {item.get('id', '?'):<40} "
-                        f"{result_str}{elapsed_str}"
-                    )
-                    if n_done % SUMMARY_EVERY == 0:
-                        for line in stats.summary_lines():
-                            tqdm.write(line)
+                result = run_prompt(llm, prompt=item.get("prompt", ""),
+                                    **shared_kwargs)
+                n_done = _log_items(stats, out_f, [item], [result],
+                                    n_done, n_total, flush=True)
 
     print(f"Saved {n_done} results to {output_path} ({len(pending)} new)")
 
