@@ -130,46 +130,81 @@ python scripts/run_eval_jsonl.py \
     --verbose
 ```
 
-### Local models — Windows / Linux / Intel Mac (llama.cpp / GGUF)
+### Local models — llama.cpp / GGUF (Apple Silicon · NVIDIA · AMD · CPU)
+
+`run_llama_jsonl.py` uses [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)
+and supports any platform that can run GGUF models.
+
+> **Python version:** llama-cpp-python requires **Python 3.14+** on macOS.
+> Python 3.13 (conda / miniconda) causes a silent crash at model load time.
+> Install Python 3.14 via `brew install python@3.14` and create the virtual
+> environment explicitly: `python3.14 -m venv .venv`
 
 Install llama-cpp-python for your hardware:
 
 ```bash
-# CPU only (no GPU required)
-pip install llama-cpp-python
+# Apple Silicon — Metal GPU (macOS M-series)
+CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --force-reinstall
 
-# NVIDIA GPU
+# NVIDIA GPU — CUDA (Linux / Windows)
 CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall
 
-# AMD GPU (Vulkan)
+# AMD GPU — Vulkan (Linux / Windows)
 CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --force-reinstall
+
+# CPU only (no GPU required, any platform)
+pip install llama-cpp-python
 ```
 
 Download a GGUF model from Hugging Face:
 
-```bash
-pip install huggingface_hub
-huggingface-cli download bartowski/gemma-3-27b-it-GGUF \
-    --include "gemma-3-27b-it-Q4_K_M.gguf" --local-dir ./models
+```python
+from huggingface_hub import hf_hub_download
+
+# Gemma 4 E4B (used in this study) — ~5 GB
+hf_hub_download(
+    repo_id="bartowski/google_gemma-4-E4B-it-GGUF",
+    filename="google_gemma-4-E4B-it-Q4_K_M.gguf",
+    local_dir="./models",
+)
+
+# Gemma 3 27B — ~17 GB
+hf_hub_download(
+    repo_id="bartowski/gemma-3-27b-it-GGUF",
+    filename="gemma-3-27b-it-Q4_K_M.gguf",
+    local_dir="./models",
+)
 ```
 
 Run evaluation:
 
 ```bash
-# GPU (all layers offloaded, default)
+# Smoke test — 5 items with live accuracy output
 python scripts/run_llama_jsonl.py \
-    --model models/gemma-3-27b-it-Q4_K_M.gguf \
+    --model models/google_gemma-4-E4B-it-Q4_K_M.gguf \
     --input data/finbench_combined_v1.jsonl \
-    --output outputs/test_gemma3_llama.jsonl \
+    --output outputs/test_gemma4e4b_llama.jsonl \
     --n 5 --verbose
 
-# CPU only
+# Full run — GPU (Metal / CUDA / Vulkan, all layers offloaded by default)
 python scripts/run_llama_jsonl.py \
-    --model models/gemma-3-27b-it-Q4_K_M.gguf \
+    --model models/google_gemma-4-E4B-it-Q4_K_M.gguf \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_gemma4e4b_llama.jsonl
+
+# Resume an interrupted run
+python scripts/run_llama_jsonl.py \
+    --model models/google_gemma-4-E4B-it-Q4_K_M.gguf \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_gemma4e4b_llama.jsonl \
+    --resume
+
+# CPU only (no GPU)
+python scripts/run_llama_jsonl.py \
+    --model models/google_gemma-4-E4B-it-Q4_K_M.gguf \
     --n-gpu-layers 0 \
     --input data/finbench_combined_v1.jsonl \
-    --output outputs/test_gemma3_cpu.jsonl \
-    --n 5 --verbose
+    --output outputs/combined_gemma4e4b_cpu.jsonl
 ```
 
 ### Scoring
