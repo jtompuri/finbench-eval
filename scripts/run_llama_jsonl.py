@@ -83,6 +83,12 @@ def resolve_max_tokens(settings: dict, model_key: str | None, override: int | No
     return max_tokens_cfg.get("default", 512)
 
 
+def resolve_n_ctx(settings: dict, override: int | None) -> int:
+    if override is not None:
+        return override
+    return settings.get("generation", {}).get("n_ctx", 4096)
+
+
 # ---------------------------------------------------------------------------
 # JSONL helpers
 # ---------------------------------------------------------------------------
@@ -178,8 +184,8 @@ def main():
                         help="Override temperature (default: from configs/run_settings.yaml)")
     parser.add_argument("--n-gpu-layers", type=int, default=-1,
                         help="GPU layers to offload: -1=all (default), 0=CPU only")
-    parser.add_argument("--n-ctx", type=int, default=4096,
-                        help="Context window size in tokens (default: 4096)")
+    parser.add_argument("--n-ctx", type=int, default=None,
+                        help="Context window size in tokens (default: from configs/run_settings.yaml)")
     parser.add_argument("--no-chat-template", action="store_true",
                         help="Disable chat template — use raw prompt (base models only)")
     parser.add_argument("--enable-thinking", action="store_true",
@@ -198,6 +204,7 @@ def main():
     max_tokens = resolve_max_tokens(settings, args.model_key, args.max_tokens)
     temperature = args.temperature if args.temperature is not None \
         else settings.get("generation", {}).get("temperature", 0.0)
+    n_ctx = resolve_n_ctx(settings, args.n_ctx)
 
     items = load_jsonl(args.input)
     if args.n is not None:
@@ -226,9 +233,9 @@ def main():
         else ("all layers → GPU" if args.n_gpu_layers == -1
               else f"{args.n_gpu_layers} layers → GPU")
     print(f"Loading model: {args.model}  [{gpu_label}]")
-    print(f"max_tokens={max_tokens}  temperature={temperature}  n_ctx={args.n_ctx}")
+    print(f"max_tokens={max_tokens}  temperature={temperature}  n_ctx={n_ctx}")
 
-    llm = load_model(args.model, n_gpu_layers=args.n_gpu_layers, n_ctx=args.n_ctx)
+    llm = load_model(args.model, n_gpu_layers=args.n_gpu_layers, n_ctx=n_ctx)
 
     use_chat_template = not args.no_chat_template
     enable_thinking = args.enable_thinking
@@ -240,7 +247,7 @@ def main():
         "max_tokens": max_tokens,
         "temperature": temperature,
         "n_gpu_layers": args.n_gpu_layers,
-        "n_ctx": args.n_ctx,
+        "n_ctx": n_ctx,
         "use_chat_template": use_chat_template,
         "enable_thinking": enable_thinking,
         "started_at": datetime.now(timezone.utc).isoformat(),

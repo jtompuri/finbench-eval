@@ -2,6 +2,11 @@
 
 generation:
   temperature: 0.0
+  # n_ctx: context window size for llama.cpp (tokens).
+  # 4096 is too small for some sib200_fi prompts — 32768 matches Gemma 4 training range
+  # and keeps results comparable with MLX (which uses the model's full context window).
+  # MLX ignores this setting.
+  n_ctx: 32768
   # max_tokens is model-specific.
   # Gemma 4 uses 150-400 tokens for chain-of-thought before the final answer;
   # Gemma 3 answers directly and stops at EOS well within the default cap.
