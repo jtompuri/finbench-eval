@@ -51,17 +51,16 @@ cp .env.example .env
 # Edit .env and fill in your keys
 ```
 
-> **Platform note:** Step 4 differs by platform — see the relevant section below
-> before running `pip install`.
-> - **Frontier API models only:** `pip install -r requirements.txt` (all platforms)
-> - **Apple Silicon (MLX):** `pip install -r requirements.txt` (mlx-lm included)
-> - **NVIDIA / AMD / CPU (llama.cpp):** install llama-cpp-python first — see [llama.cpp section](#local-models--llamacpp--gguf-apple-silicon--nvidia--amd--cpu)
+> **Platform note:** use the requirements file for your platform:
+> - **Frontier API models only:** `pip install -r requirements.txt`
+> - **Apple Silicon (MLX):** `pip install -r requirements-mlx.txt`
+> - **NVIDIA / AMD / CPU (llama.cpp):** install llama-cpp-python first, then `pip install -r requirements-cuda.txt` — see [llama.cpp section](#local-models--llamacpp--gguf-apple-silicon--nvidia--amd--cpu)
 
 ### Frontier models (API)
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt   # comment out mlx-lm on Linux / Windows
+pip install -r requirements.txt
 
 # Run 5 items on ARC Challenge FI with GPT-5.4
 source .env
@@ -127,11 +126,10 @@ python scripts/run_frontier_jsonl.py \
 and requires an Apple M-series chip. Models are downloaded automatically from
 Hugging Face on first use — no separate download step needed.
 
-> **Platform:** macOS with Apple Silicon (M1 or later) only. On Linux / Windows,
-> comment out the `mlx-lm` line in `requirements.txt` before installing.
+> **Platform:** macOS with Apple Silicon (M1 or later) only.
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-mlx.txt
 ```
 
 Run evaluation:
@@ -230,10 +228,7 @@ pip install llama-cpp-python
 #### Step 3 — Install remaining dependencies
 
 ```bash
-# Linux / Windows: disable mlx-lm first
-sed -i 's/^mlx-lm/# mlx-lm/' requirements.txt
-
-pip install -r requirements.txt
+pip install -r requirements-cuda.txt
 ```
 
 #### Step 4 — Download a GGUF model

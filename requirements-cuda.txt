@@ -1,0 +1,22 @@
+# NVIDIA / AMD / CPU — llama.cpp (GGUF) local inference
+# Install llama-cpp-python FIRST with the correct GPU flag, then run this file:
+#
+#   NVIDIA (pre-built wheel, recommended):
+#     pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
+#     (replace cu121 with your CUDA version: cu122, cu123, cu124, cu125)
+#
+#   NVIDIA (build from source):
+#     CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --no-binary llama-cpp-python
+#
+#   Apple Silicon (Metal):
+#     CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --no-binary llama-cpp-python
+#
+#   AMD (Vulkan):
+#     CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --no-binary llama-cpp-python
+#
+#   CPU only:
+#     pip install llama-cpp-python
+#
+# Then: pip install -r requirements-cuda.txt
+
+-r requirements.txt

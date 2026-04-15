@@ -1,0 +1,7 @@
+# Apple Silicon (macOS M-series) — MLX local inference
+# Install with: pip install -r requirements-mlx.txt
+
+-r requirements.txt
+
+# --- Local inference (Apple Silicon / MLX) ---
+mlx-lm>=0.14.0

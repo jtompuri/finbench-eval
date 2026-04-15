@@ -1,24 +1,14 @@
-# FIN-bench-eval dependencies
-# Install with: pip install -r requirements.txt
+# FIN-bench-eval — shared dependencies (all platforms)
+# Do not install this file directly. Use the platform-specific file instead:
+#
+#   Apple Silicon (MLX):      pip install -r requirements-mlx.txt
+#   NVIDIA / AMD / CPU:       pip install -r requirements-cuda.txt
+#   Frontier API models only: pip install -r requirements.txt
 
 # --- Frontier API clients ---
 openai>=1.30.0
 anthropic>=0.28.0
 google-generativeai>=0.7.0
-
-# --- Local inference (Apple Silicon / MLX — macOS M-series only) ---
-# Comment out on Linux / Windows / Intel Mac:
-mlx-lm>=0.14.0
-
-# --- Local inference (GGUF / llama-cpp-python) ---
-# Must be installed BEFORE pip install -r requirements.txt with the correct CMAKE_ARGS:
-#
-#   Apple Silicon (Metal):  CMAKE_ARGS="-DGGML_METAL=on"  pip install llama-cpp-python
-#   NVIDIA GPU (CUDA):      CMAKE_ARGS="-DGGML_CUDA=on"   pip install llama-cpp-python
-#   AMD GPU (Vulkan):       CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python
-#   CPU only:               pip install llama-cpp-python
-#
-# llama-cpp-python>=0.2.90
 
 # --- Evaluation and scoring ---
 bert-score>=0.3.12
@@ -26,7 +16,7 @@ scipy>=1.12.0
 
 # --- Data and analysis ---
 pandas>=2.2.0
-pyarrow>=16.0.0       # for scores.parquet
+pyarrow>=16.0.0
 tqdm>=4.66.0
 
 # --- Plotting ---
@@ -38,7 +28,3 @@ PyYAML>=6.0
 
 # --- Testing ---
 pytest>=8.0.0
-
-# --- Optional: CUDA / Hugging Face Transformers backend ---
-# transformers>=4.40.0
-# torch>=2.2.0
