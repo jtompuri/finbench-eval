@@ -304,6 +304,79 @@ python scripts/run_llama_jsonl.py \
 
 ---
 
+### Local models — vLLM (Linux + NVIDIA CUDA)
+
+`run_vllm_jsonl.py` uses [vLLM](https://github.com/vllm-project/vllm) and loads
+models directly from Hugging Face — no GGUF conversion needed. vLLM's
+PagedAttention allocates KV cache dynamically, making it significantly faster
+than llama.cpp for batched inference.
+
+> **Platform:** Linux with NVIDIA CUDA only. Not supported on macOS or AMD.
+
+```bash
+pip install -r requirements-vllm.txt
+```
+
+```bash
+# Smoke test — 5 items with live accuracy output
+python scripts/run_vllm_jsonl.py \
+    --model google/gemma-4-e4b-it \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/test_gemma4e4b_vllm.jsonl \
+    --n 5 --verbose
+
+# Full run — sequential (per-item flush, safest, supports --resume)
+python scripts/run_vllm_jsonl.py \
+    --model google/gemma-4-e4b-it \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_gemma4e4b_vllm.jsonl
+
+# Full run — chunked batch (recommended: throughput + safety)
+# Submits 100 prompts per generate() call, flushes after each chunk.
+# Supports --resume — at most 100 items are lost if the run is interrupted.
+python scripts/run_vllm_jsonl.py \
+    --model google/gemma-4-e4b-it \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_gemma4e4b_vllm.jsonl \
+    --batch-size 100 --resume
+
+# Full run — full batch (all prompts in one call, no intermediate saves)
+python scripts/run_vllm_jsonl.py \
+    --model google/gemma-4-e4b-it \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_gemma4e4b_vllm.jsonl \
+    --batch
+
+# Multi-GPU (tensor parallelism)
+python scripts/run_vllm_jsonl.py \
+    --model google/gemma-4-e4b-it \
+    --input data/finbench_combined_v1.jsonl \
+    --output outputs/combined_gemma4e4b_vllm.jsonl \
+    --tensor-parallel-size 2
+```
+
+Three inference modes (mutually exclusive):
+
+| Mode | Flag | Flush | Resume | Use when |
+|---|---|---|---|---|
+| Sequential | *(default)* | after every item | ✓ | development, small runs |
+| Chunked batch | `--batch-size N` | after every N items | ✓ | **recommended for full runs** |
+| Full batch | `--batch` | at the end | ✗ | short smoke tests only |
+
+Key options:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--batch-size N` | — | Prompts per `generate()` call; flush after each chunk (recommended: 50–200) |
+| `--batch` | off | All prompts in one `generate()` call — no intermediate saves |
+| `--tensor-parallel-size N` | 1 | Number of GPUs for tensor parallelism |
+| `--gpu-memory-utilization F` | 0.90 | Fraction of GPU memory for model + KV cache |
+| `--max-model-len N` | 8192 | Maximum sequence length (prompt + response) |
+| `--enable-thinking` | off | Activate chain-of-thought for Gemma 4 and compatible models |
+| `--trust-remote-code` | off | Allow executing code from the model repository |
+
+---
+
 ### Scoring
 
 ```bash
@@ -346,6 +419,8 @@ scripts/
     run_frontier_jsonl.py   # Run frontier API models (OpenAI, Anthropic, Google, OpenRouter)
     run_eval_jsonl.py       # Run local MLX models (Apple Silicon)
     run_llama_jsonl.py      # Run local GGUF models via llama.cpp (all platforms)
+    run_vllm_jsonl.py       # Run local HuggingFace models via vLLM (Linux + CUDA)
+    runner_utils.py         # Shared utilities (LiveStats, load_jsonl, resume, thinking helpers)
     frontier_adapters.py    # Provider abstraction + API adapters (single-call & batch)
     score_eval.py           # Scoring: accuracy, F1, Wilson CI
     eval_config.py          # Task baselines and normalisation formula
@@ -357,6 +432,7 @@ scripts/
     build_subset_jsonl.py   # Build evaluation subsets from raw task data
     run_mlx_prompt.py       # Single-prompt MLX runner (smoke tests)
     run_llama_prompt.py     # Single-prompt llama.cpp runner (smoke tests)
+    run_vllm_prompt.py      # Single-prompt vLLM runner (smoke tests)
     compute_bertscore_squad.py  # BERTScore validation for SQuAD FI
     analysis/
         final_summary.py        # Per-model summary table

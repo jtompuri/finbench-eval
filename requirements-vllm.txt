@@ -1,0 +1,13 @@
+# NVIDIA GPU — vLLM local inference (Linux + CUDA only)
+# Requires CUDA 12.1+ and Python 3.9–3.12.
+#
+# Install with: pip install -r requirements-vllm.txt
+#
+# Models are loaded directly from Hugging Face — no GGUF download needed.
+# A Hugging Face account may be required for gated models (e.g. Gemma):
+#   huggingface-cli login
+
+-r requirements.txt
+
+# --- Local inference (vLLM — NVIDIA CUDA only) ---
+vllm>=0.4.0

@@ -78,111 +78,16 @@ load_dotenv(Path(__file__).parent.parent / ".env", override=True)
 
 sys.path.insert(0, str(Path(__file__).parent))
 import frontier_adapters as fa
-from normalize_answer import extract_mcf_letter, extract_mcf_word
+from runner_utils import LiveStats, SUMMARY_EVERY, load_jsonl, build_resume_set
 
 
 PROVIDERS = ("openai", "anthropic", "google", "openrouter",
              "openai-thinking", "anthropic-thinking")
-SUMMARY_EVERY = 50   # print a running summary every N items in --verbose mode
-
-
-# ---------------------------------------------------------------------------
-# Live statistics tracker
-# ---------------------------------------------------------------------------
-
-class LiveStats:
-    """
-    Tracks per-task running accuracy for MCF tasks during sequential runs.
-    Printed at regular intervals when --verbose is active.
-    """
-    def __init__(self):
-        self.by_task: dict[str, dict] = {}
-
-    def update(self, item: dict, response: str) -> str:
-        """
-        Score one item inline and return a short result string for live display.
-        Only MCF tasks are scored live; gen tasks show response snippet only.
-        """
-        task = item.get("task", "?")
-        task_type = item.get("task_type", "gen")
-        expected = item.get("expected", "")
-
-        if task not in self.by_task:
-            self.by_task[task] = {"n": 0, "correct": 0, "task_type": task_type}
-        entry = self.by_task[task]
-        entry["n"] += 1
-
-        if task_type == "mcf_letter":
-            got = extract_mcf_letter(response) or "?"
-            correct = got == expected.upper()
-            entry["correct"] += int(correct)
-            mark = "✓" if correct else "✗"
-            return f"exp={expected}  got={got}  {mark}"
-
-        elif task_type == "mcf_word":
-            choices = item.get("expected_choices", [])
-            got = extract_mcf_word(response, choices) or "?"
-            correct = got == expected.lower()
-            entry["correct"] += int(correct)
-            mark = "✓" if correct else "✗"
-            return f"exp={expected}  got={got}  {mark}"
-
-        else:  # gen — just show snippet
-            snippet = response[:50].replace("\n", " ")
-            return f"→ {snippet!r}"
-
-    def summary_lines(self) -> list[str]:
-        lines = ["─" * 60, "  Running accuracy by task:"]
-        total_n = total_c = 0
-        for task, entry in sorted(self.by_task.items()):
-            n, c = entry["n"], entry["correct"]
-            if entry["task_type"] in ("mcf_letter", "mcf_word"):
-                pct = 100 * c / n if n else 0
-                lines.append(f"    {task:<35} {c}/{n}  ({pct:.1f}%)")
-                total_n += n
-                total_c += c
-            else:
-                lines.append(f"    {task:<35} {n} items  (gen — scored offline)")
-        if total_n:
-            overall = 100 * total_c / total_n
-            lines.append(f"  MCF overall: {total_c}/{total_n}  ({overall:.1f}%)")
-        lines.append("─" * 60)
-        return lines
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def load_jsonl(path: str) -> list:
-    """Load JSONL file, skipping any lines that cannot be parsed (e.g. truncated last line)."""
-    items = []
-    with open(path, encoding="utf-8") as f:
-        for lineno, raw in enumerate(f, 1):
-            line = raw.strip()
-            if not line:
-                continue
-            try:
-                items.append(json.loads(line))
-            except json.JSONDecodeError:
-                print(f"WARNING: Skipping malformed JSON on line {lineno} of {path} "
-                      f"(truncated write?): {line[:60]!r}", file=sys.stderr)
-    return items
 
 
 def batch_meta_path(output_path: Path) -> Path:
     """Derive the batch metadata file path from the output JSONL path."""
     return output_path.parent / f"{output_path.stem}_batch_meta.json"
-
-
-def load_completed_ids(output_path: Path) -> set:
-    if not output_path.exists():
-        return set()
-    ids = set()
-    for rec in load_jsonl(str(output_path)):
-        if "id" in rec:
-            ids.add(rec["id"])
-    return ids
 
 
 def save_meta(meta: dict, path: Path) -> None:
@@ -373,7 +278,7 @@ def main():
             **meta.get("generation_kwargs", {}),
         }
 
-        already_done = load_completed_ids(output_path) if args.resume else set()
+        already_done = build_resume_set(output_path) if args.resume else set()
         output_path.parent.mkdir(parents=True, exist_ok=True)
         open_mode = "a" if already_done else "w"
         written = skipped_errors = 0
@@ -425,9 +330,10 @@ def main():
 
     # Resume: filter already-completed items
     completed_ids = set()
-    if args.resume and output_path.exists():
-        completed_ids = load_completed_ids(output_path)
-        print(f"Resuming: {len(completed_ids)} items already completed, skipping.")
+    if args.resume:
+        completed_ids = build_resume_set(output_path)
+        if completed_ids:
+            print(f"Resuming: {len(completed_ids)} items already completed, skipping.")
     pending = [it for it in items if it.get("id") not in completed_ids]
     if len(pending) < len(items):
         print(f"Items to run: {len(pending)} / {len(items)}")

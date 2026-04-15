@@ -16,40 +16,19 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent))
 from run_mlx_prompt import load_model, run_prompt
-
-REPO_ROOT = Path(__file__).parent.parent
-RUN_SETTINGS_PATH = REPO_ROOT / "configs" / "run_settings.yaml"
-
-
-def load_run_settings() -> dict:
-    with open(RUN_SETTINGS_PATH, encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-
-def resolve_max_tokens(settings: dict, model_key: str | None, override: int | None) -> int:
-    if override is not None:
-        return override
-    max_tokens_cfg = settings.get("generation", {}).get("max_tokens", {})
-    if isinstance(max_tokens_cfg, int):
-        return max_tokens_cfg
-    if model_key and model_key in max_tokens_cfg:
-        return max_tokens_cfg[model_key]
-    return max_tokens_cfg.get("default", 512)
-
-
-def load_jsonl(path: str) -> list:
-    items = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                items.append(json.loads(line))
-    return items
+from runner_utils import (
+    LiveStats,
+    SUMMARY_EVERY,
+    build_resume_set,
+    load_jsonl,
+    load_run_settings,
+    resolve_max_tokens,
+    resolve_temperature,
+)
 
 
 def main():
@@ -76,14 +55,15 @@ def main():
     parser.add_argument("--subset", default=None,
                         help="Run only items whose 'task' field matches this value "
                              "(e.g. --subset arc_challenge_fi)")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Print per-item response and running MCF accuracy")
     parser.add_argument("--resume", action="store_true",
                         help="Skip items already present in the output file (resume interrupted run)")
     args = parser.parse_args()
 
-    settings = load_run_settings()
-    max_tokens = resolve_max_tokens(settings, args.model_key, args.max_tokens)
-    temperature = args.temperature if args.temperature is not None \
-        else settings.get("generation", {}).get("temperature", 0.0)
+    settings    = load_run_settings()
+    max_tokens  = resolve_max_tokens(settings, args.model_key, args.max_tokens)
+    temperature = resolve_temperature(settings, args.temperature)
 
     items = load_jsonl(args.input)
     if args.subset:
@@ -95,16 +75,15 @@ def main():
     if args.n is not None:
         items = items[:args.n]
         print(f"Limiting to first {len(items)} items (--n {args.n})")
+
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Resume: find already-completed item IDs and skip them
-    completed_ids: set[str] = set()
-    if args.resume and output_path.exists():
-        for record in load_jsonl(str(output_path)):
-            if "id" in record:
-                completed_ids.add(record["id"])
-        print(f"Resuming: {len(completed_ids)} items already completed, skipping.")
+    completed_ids = set()
+    if args.resume:
+        completed_ids = build_resume_set(output_path)
+        if completed_ids:
+            print(f"Resuming: {len(completed_ids)} items already completed, skipping.")
 
     pending = [it for it in items if it.get("id") not in completed_ids]
     if len(pending) < len(items):
@@ -119,26 +98,30 @@ def main():
     model, tokenizer = load_model(args.model)
 
     use_chat_template = not args.no_chat_template
-    enable_thinking = args.enable_thinking
+    enable_thinking   = args.enable_thinking
     run_meta = {
-        "model": args.model,
-        "model_key": args.model_key,
-        "input": args.input,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
+        "model":            args.model,
+        "model_key":        args.model_key,
+        "backend":          "mlx",
+        "input":            args.input,
+        "max_tokens":       max_tokens,
+        "temperature":      temperature,
         "use_chat_template": use_chat_template,
-        "enable_thinking": enable_thinking,
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "enable_thinking":  enable_thinking,
+        "started_at":       datetime.now(timezone.utc).isoformat(),
     }
 
-    # Append if resuming, otherwise overwrite
+    stats     = LiveStats() if args.verbose else None
     open_mode = "a" if completed_ids else "w"
+    n_done    = len(completed_ids)
+    n_total   = len(completed_ids) + len(pending)
+
     with open(output_path, open_mode, encoding="utf-8") as out_f:
-        for item in tqdm(pending, desc="Running prompts"):
-            prompt = item.get("prompt", "")
+        pbar = tqdm(pending, desc=Path(args.model).name)
+        for item in pbar:
             result = run_prompt(
                 model, tokenizer,
-                prompt=prompt,
+                prompt=item.get("prompt", ""),
                 model_path=args.model,
                 max_tokens=max_tokens,
                 temperature=temperature,
@@ -148,9 +131,26 @@ def main():
             record = {**item, **result, "run_meta": run_meta}
             out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
             out_f.flush()
+            n_done += 1
 
-    total = len(completed_ids) + len(pending)
-    print(f"Saved {total} results to {output_path} ({len(pending)} new)")
+            if stats is not None:
+                result_str = stats.update(item, result.get("response", ""))
+                elapsed    = result.get("elapsed_s")
+                elapsed_str = f"  {elapsed:.1f}s" if elapsed else ""
+                tqdm.write(
+                    f"[{n_done:>4}/{n_total}] {item.get('id', '?'):<40} "
+                    f"{result_str}{elapsed_str}"
+                )
+                if n_done % SUMMARY_EVERY == 0:
+                    for line in stats.summary_lines():
+                        tqdm.write(line)
+
+    print(f"Saved {n_done} results to {output_path} ({len(pending)} new)")
+
+    if stats is not None:
+        print()
+        for line in stats.summary_lines():
+            print(line)
 
 
 if __name__ == "__main__":
