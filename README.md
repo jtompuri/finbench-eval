@@ -203,7 +203,10 @@ CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --no-binary llama-cpp-
 **NVIDIA — CUDA (recommended: pre-built wheel, no compiler needed):**
 
 ```bash
-# Replace cu121 with your CUDA version: cu122, cu123, cu124, cu125
+# Check your CUDA version first
+nvcc --version
+
+# Install the matching wheel (cu121=12.1, cu122=12.2, cu123=12.3, cu124=12.4, cu125=12.5)
 pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
 ```
 
