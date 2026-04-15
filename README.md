@@ -174,25 +174,49 @@ Models used in this study (all from [mlx-community](https://huggingface.co/mlx-c
 `run_llama_jsonl.py` uses [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)
 and supports any platform that can run GGUF models.
 
-> **Python version:** llama-cpp-python requires **Python 3.14+** on macOS.
+> **macOS:** llama-cpp-python requires **Python 3.14+** on macOS.
 > Python 3.13 (conda / miniconda) causes a silent crash at model load time.
 > Install Python 3.14 via `brew install python@3.14` and create the virtual
 > environment explicitly: `python3.14 -m venv .venv`
 
-Install llama-cpp-python for your hardware:
+> **Linux (Ubuntu + NVIDIA):** Install `cmake` and the CUDA toolkit before
+> building llama-cpp-python:
+> ```bash
+> sudo apt-get install -y cmake build-essential
+> # Verify CUDA is available:
+> nvcc --version && nvidia-smi
+> ```
+
+Install llama-cpp-python for your hardware **before** running
+`pip install -r requirements.txt`:
 
 ```bash
 # Apple Silicon — Metal GPU (macOS M-series)
-CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --force-reinstall
+CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --no-binary llama-cpp-python
 
 # NVIDIA GPU — CUDA (Linux / Windows)
-CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall
+# Set CUDA_HOME if nvcc is not in /usr/local/cuda:
+export CUDA_HOME=/usr/lib/nvidia-cuda-toolkit   # adjust if needed
+CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --no-binary llama-cpp-python
 
 # AMD GPU — Vulkan (Linux / Windows)
-CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --force-reinstall
+CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --no-binary llama-cpp-python
 
 # CPU only (no GPU required, any platform)
 pip install llama-cpp-python
+```
+
+Verify GPU support after install:
+
+```bash
+python -c "from llama_cpp import llama_cpp as _lib; print('CUDA:', getattr(_lib, 'GGML_USE_CUDA', False))"
+```
+
+Install remaining dependencies (comment out `mlx-lm` on Linux/Windows first):
+
+```bash
+sed -i 's/^mlx-lm/# mlx-lm/' requirements.txt   # Linux / Windows
+pip install -r requirements.txt
 ```
 
 Download a GGUF model from Hugging Face:
