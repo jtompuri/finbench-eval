@@ -17,12 +17,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from normalize_answer import extract_final_answer
+from runner_utils import THINKING_DELIMITER as _THINKING_DELIMITER, \
+                         THINKING_PREFIX    as _THINKING_PREFIX
 
 from mlx_lm import generate, load
 from mlx_lm.sample_utils import make_sampler
-
-_THINKING_DELIMITER = "<channel|>"
-_THINKING_PREFIX = "<|channel>thought\n"
 
 
 def load_model(model_path: str):

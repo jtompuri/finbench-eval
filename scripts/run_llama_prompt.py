@@ -39,10 +39,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from normalize_answer import extract_final_answer
-
-# Gemma 4 thinking delimiters — identical to run_mlx_prompt.py
-_THINKING_DELIMITER = "<channel|>"
-_THINKING_PREFIX = "<|channel>thought\n"
+from runner_utils import THINKING_DELIMITER as _THINKING_DELIMITER, \
+                         THINKING_PREFIX    as _THINKING_PREFIX
 
 
 def load_model(
