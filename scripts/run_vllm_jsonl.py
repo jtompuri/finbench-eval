@@ -42,7 +42,7 @@ import yaml
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent))
-from run_vllm_prompt import load_model, run_prompt
+from run_vllm_prompt import load_model, run_prompt, run_batch
 from normalize_answer import extract_mcf_letter, extract_mcf_word
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -182,6 +182,10 @@ def main():
                         help="Print per-item response and running MCF accuracy")
     parser.add_argument("--resume", action="store_true",
                         help="Skip items already present in the output file")
+    parser.add_argument("--batch", action="store_true",
+                        help="Submit all prompts in a single vLLM generate() call for maximum "
+                             "GPU throughput via continuous batching. Results are written after "
+                             "the full batch completes — intermediate saving is not available.")
     args = parser.parse_args()
 
     settings = load_run_settings()
@@ -247,33 +251,61 @@ def main():
     n_total = len(completed_ids) + len(pending)
 
     with open(output_path, open_mode, encoding="utf-8") as out_f:
-        pbar = tqdm(pending, desc=Path(args.model).name)
-        for item in pbar:
-            result = run_prompt(
+
+        if args.batch:
+            # --- Batch mode: submit all prompts at once for continuous batching ---
+            print(f"Batch mode: submitting {len(pending)} prompts to vLLM in one call...")
+            batch_results = run_batch(
                 llm,
-                prompt=item.get("prompt", ""),
+                prompts=[it.get("prompt", "") for it in pending],
                 model_path=args.model,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 use_chat_template=use_chat_template,
                 enable_thinking=enable_thinking,
             )
-            record = {**item, **result, "run_meta": run_meta}
-            out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            out_f.flush()
-            n_done += 1
+            for item, result in zip(pending, batch_results):
+                record = {**item, **result, "run_meta": run_meta}
+                out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                n_done += 1
+                if stats is not None:
+                    result_str = stats.update(item, result.get("response", ""))
+                    elapsed = result.get("elapsed_s")
+                    elapsed_str = f"  {elapsed:.1f}s" if elapsed else ""
+                    tqdm.write(
+                        f"[{n_done:>4}/{n_total}] {item.get('id', '?'):<40} "
+                        f"{result_str}{elapsed_str}"
+                    )
 
-            if stats is not None:
-                result_str = stats.update(item, result.get("response", ""))
-                elapsed = result.get("elapsed_s")
-                elapsed_str = f"  {elapsed:.1f}s" if elapsed else ""
-                tqdm.write(
-                    f"[{n_done:>4}/{n_total}] {item.get('id', '?'):<40} "
-                    f"{result_str}{elapsed_str}"
+        else:
+            # --- Sequential mode: one prompt at a time, flush after each ---
+            pbar = tqdm(pending, desc=Path(args.model).name)
+            for item in pbar:
+                result = run_prompt(
+                    llm,
+                    prompt=item.get("prompt", ""),
+                    model_path=args.model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    use_chat_template=use_chat_template,
+                    enable_thinking=enable_thinking,
                 )
-                if n_done % SUMMARY_EVERY == 0:
-                    for line in stats.summary_lines():
-                        tqdm.write(line)
+                record = {**item, **result, "run_meta": run_meta}
+                out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
+                out_f.flush()
+                n_done += 1
+
+                if stats is not None:
+                    result_str = stats.update(item, result.get("response", ""))
+                    elapsed = result.get("elapsed_s")
+                    elapsed_str = f"  {elapsed:.1f}s" if elapsed else ""
+                    tqdm.write(
+                        f"[{n_done:>4}/{n_total}] {item.get('id', '?'):<40} "
+                        f"{result_str}{elapsed_str}"
+                    )
+                    if n_done % SUMMARY_EVERY == 0:
+                        for line in stats.summary_lines():
+                            tqdm.write(line)
 
     print(f"Saved {n_done} results to {output_path} ({len(pending)} new)")
 

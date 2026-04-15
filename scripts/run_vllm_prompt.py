@@ -71,6 +71,40 @@ def load_model(
     )
 
 
+def _format_prompt(
+    llm,
+    prompt: str,
+    use_chat_template: bool = True,
+    enable_thinking: bool = False,
+) -> str:
+    """Apply the model's chat template to a single prompt string."""
+    if not use_chat_template:
+        return prompt
+    tokenizer = llm.get_tokenizer()
+    for kwargs in ({"enable_thinking": enable_thinking}, {}):
+        try:
+            return tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+                **kwargs,
+            )
+        except Exception:
+            continue
+    return prompt
+
+
+def _parse_output(raw_response: str) -> tuple[str, str | None]:
+    """Extract (response, thinking) from a raw model output string."""
+    response = extract_final_answer(raw_response)
+    thinking = (
+        raw_response.split(_THINKING_DELIMITER, 1)[0]
+        .removeprefix(_THINKING_PREFIX).strip()
+        if _THINKING_DELIMITER in raw_response else None
+    )
+    return response, thinking
+
+
 def run_prompt(
     llm,
     prompt: str,
@@ -95,45 +129,13 @@ def run_prompt(
         raise ImportError("vllm is required: pip install -r requirements-vllm.txt")
 
     t0 = time.time()
-
-    sampling_params = SamplingParams(
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
-
-    if use_chat_template:
-        tokenizer = llm.get_tokenizer()
-        chat_kwargs = {}
-        if enable_thinking:
-            chat_kwargs["enable_thinking"] = True
-        try:
-            formatted = tokenizer.apply_chat_template(
-                [{"role": "user", "content": prompt}],
-                tokenize=False,
-                add_generation_prompt=True,
-                **chat_kwargs,
-            )
-        except Exception:
-            # Fall back without enable_thinking if template doesn't support it
-            formatted = tokenizer.apply_chat_template(
-                [{"role": "user", "content": prompt}],
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        outputs = llm.generate([formatted], sampling_params, use_tqdm=False)
-    else:
-        outputs = llm.generate([prompt], sampling_params, use_tqdm=False)
-
+    sampling_params = SamplingParams(temperature=temperature, max_tokens=max_tokens)
+    formatted = _format_prompt(llm, prompt, use_chat_template, enable_thinking)
+    outputs = llm.generate([formatted], sampling_params, use_tqdm=False)
     raw_response = (outputs[0].outputs[0].text or "").strip()
     elapsed = round(time.time() - t0, 3)
 
-    response = extract_final_answer(raw_response)
-    thinking = (
-        raw_response.split(_THINKING_DELIMITER, 1)[0]
-        .removeprefix(_THINKING_PREFIX).strip()
-        if _THINKING_DELIMITER in raw_response else None
-    )
-
+    response, thinking = _parse_output(raw_response)
     result = {
         "model": model_path,
         "prompt": prompt,
@@ -149,6 +151,61 @@ def run_prompt(
     if thinking is not None:
         result["thinking"] = thinking
     return result
+
+
+def run_batch(
+    llm,
+    prompts: list[str],
+    model_path: str,
+    max_tokens: int = 512,
+    temperature: float = 0.0,
+    use_chat_template: bool = True,
+    enable_thinking: bool = False,
+) -> list[dict]:
+    """
+    Run all prompts in a single vLLM generate() call, using continuous
+    batching for maximum GPU throughput.
+
+    Returns a list of result dicts in the same order as `prompts`.
+    elapsed_s covers the full batch wall-clock time divided by item count.
+
+    Note: results are only available after the entire batch completes,
+    so intermediate saving (--resume) is not possible in batch mode.
+    """
+    try:
+        from vllm import SamplingParams
+    except ImportError:
+        raise ImportError("vllm is required: pip install -r requirements-vllm.txt")
+
+    t0 = time.time()
+    sampling_params = SamplingParams(temperature=temperature, max_tokens=max_tokens)
+    formatted = [
+        _format_prompt(llm, p, use_chat_template, enable_thinking) for p in prompts
+    ]
+    outputs = llm.generate(formatted, sampling_params)
+    elapsed_total = round(time.time() - t0, 3)
+    elapsed_per_item = round(elapsed_total / max(len(prompts), 1), 3)
+
+    results = []
+    for prompt, output in zip(prompts, outputs):
+        raw_response = (output.outputs[0].text or "").strip()
+        response, thinking = _parse_output(raw_response)
+        result = {
+            "model": model_path,
+            "prompt": prompt,
+            "response": response,
+            "generation_kwargs": {
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "use_chat_template": use_chat_template,
+                "enable_thinking": enable_thinking,
+            },
+            "elapsed_s": elapsed_per_item,
+        }
+        if thinking is not None:
+            result["thinking"] = thinking
+        results.append(result)
+    return results
 
 
 def main():
