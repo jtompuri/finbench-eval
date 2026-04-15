@@ -182,6 +182,10 @@ def main():
                         help="Context window size in tokens (default: 4096)")
     parser.add_argument("--no-chat-template", action="store_true",
                         help="Disable chat template — use raw prompt (base models only)")
+    parser.add_argument("--enable-thinking", action="store_true",
+                        help="Enable chain-of-thought thinking for supported models (e.g. Gemma 4). "
+                             "Thinking tokens are stored in a separate 'thinking' field; "
+                             "the final answer is extracted into 'response'.")
     parser.add_argument("--n", type=int, default=None,
                         help="Limit to first N items (useful for smoke tests)")
     parser.add_argument("--verbose", action="store_true",
@@ -227,6 +231,7 @@ def main():
     llm = load_model(args.model, n_gpu_layers=args.n_gpu_layers, n_ctx=args.n_ctx)
 
     use_chat_template = not args.no_chat_template
+    enable_thinking = args.enable_thinking
     run_meta = {
         "model": args.model,
         "model_key": args.model_key,
@@ -237,6 +242,7 @@ def main():
         "n_gpu_layers": args.n_gpu_layers,
         "n_ctx": args.n_ctx,
         "use_chat_template": use_chat_template,
+        "enable_thinking": enable_thinking,
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -255,6 +261,7 @@ def main():
                 max_tokens=max_tokens,
                 temperature=temperature,
                 use_chat_template=use_chat_template,
+                enable_thinking=enable_thinking,
             )
             record = {**item, **result, "run_meta": run_meta}
             out_f.write(json.dumps(record, ensure_ascii=False) + "\n")

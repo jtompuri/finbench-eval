@@ -12,6 +12,11 @@ and CPU-only inference. GPU offloading is controlled by --n-gpu-layers:
    0  CPU-only (no GPU required)
    N  offload N layers (partial GPU, useful when VRAM is limited)
 
+Thinking mode (--enable-thinking) is supported for models that have an
+enable_thinking parameter in their Jinja2 chat template (e.g. Gemma 4).
+The thinking block is stripped from `response` and stored in `thinking`,
+matching the schema used by run_mlx_prompt.py and frontier thinking models.
+
 Installation:
   # CPU-only (all platforms)
   pip install llama-cpp-python
@@ -24,11 +29,20 @@ Installation:
 
 CLI usage (loads model fresh each call — use run_llama_jsonl.py for batches):
     python run_llama_prompt.py --model /path/to/model.gguf --prompt "text"
+    python run_llama_prompt.py --model /path/to/model.gguf --prompt "text" --enable-thinking
 """
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from normalize_answer import extract_final_answer
+
+# Gemma 4 thinking delimiters — identical to run_mlx_prompt.py
+_THINKING_DELIMITER = "<channel|>"
+_THINKING_PREFIX = "<|channel>thought\n"
 
 
 def load_model(
@@ -59,6 +73,63 @@ def load_model(
     )
 
 
+def apply_chat_template(llm, prompt: str, enable_thinking: bool = False) -> str:
+    """Apply the model's Jinja2 chat template from GGUF metadata.
+
+    When enable_thinking=True, passes that variable to the template so models
+    that support it (e.g. Gemma 4) activate chain-of-thought generation.
+    Falls back gracefully for models whose templates do not accept the variable.
+    """
+    template_str = llm.metadata.get("tokenizer.chat_template", "")
+    if not template_str:
+        # Simple fallback for models without an embedded template
+        return f"<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
+
+    try:
+        import jinja2
+    except ImportError:
+        raise ImportError(
+            "jinja2 is required for thinking mode: pip install jinja2\n"
+            "(It is typically installed automatically with llama-cpp-python.)"
+        )
+
+    env = jinja2.Environment(
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+    )
+    # Some templates call raise_exception() — provide a no-op shim
+    env.globals["raise_exception"] = lambda msg: (_ for _ in ()).throw(ValueError(msg))
+
+    template = env.from_string(template_str)
+    messages = [{"role": "user", "content": prompt}]
+
+    # Try with enable_thinking first; fall back without if the template rejects it
+    for kwargs in (
+        {"enable_thinking": enable_thinking},
+        {},
+    ):
+        try:
+            rendered = template.render(
+                messages=messages,
+                add_generation_prompt=True,
+                bos_token="<bos>",
+                eos_token="<eos>",
+                **kwargs,
+            )
+            # llama-cpp-python adds its own BOS token when using the raw llm()
+            # completion endpoint, so strip any leading <bos> from the rendered
+            # template to avoid a duplicate BOS warning.
+            if rendered.startswith("<bos>"):
+                rendered = rendered[len("<bos>"):]
+            return rendered
+        except jinja2.exceptions.UndefinedError:
+            continue
+
+    # Last-resort fallback
+    return f"<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
+
+
 def run_prompt(
     llm,
     prompt: str,
@@ -66,35 +137,48 @@ def run_prompt(
     max_tokens: int = 512,
     temperature: float = 0.0,
     use_chat_template: bool = True,
+    enable_thinking: bool = False,
 ) -> dict:
     """
     Run a single prompt and return a structured result dict compatible with
     the JSONL output schema used by run_eval_jsonl.py and score_eval.py.
 
-    use_chat_template=True wraps the prompt in the model's instruct format
-    via llama-cpp-python's built-in chat completion endpoint. Set to False
-    for base (non-instruct) models or when the prompt is already formatted.
+    use_chat_template=True wraps the prompt in the model's instruct format.
+    enable_thinking=True activates chain-of-thought for models that support it
+    (e.g. Gemma 4). The thinking block is stripped from `response` via
+    extract_final_answer() and stored separately in `thinking`, matching the
+    schema produced by run_mlx_prompt.py and frontier thinking models.
     """
     t0 = time.time()
 
-    if use_chat_template:
+    if use_chat_template and enable_thinking:
+        # Render the template manually so we can pass enable_thinking=True,
+        # then use the raw completion endpoint (create_chat_completion does not
+        # expose template variables).
+        formatted = apply_chat_template(llm, prompt, enable_thinking=True)
+        output = llm(formatted, max_tokens=max_tokens, temperature=temperature)
+        raw_response = (output["choices"][0]["text"] or "").strip()
+    elif use_chat_template:
         output = llm.create_chat_completion(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=temperature,
         )
-        response = (output["choices"][0]["message"].get("content") or "").strip()
+        raw_response = (output["choices"][0]["message"].get("content") or "").strip()
     else:
-        output = llm(
-            prompt,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-        response = (output["choices"][0]["text"] or "").strip()
+        output = llm(prompt, max_tokens=max_tokens, temperature=temperature)
+        raw_response = (output["choices"][0]["text"] or "").strip()
 
     elapsed = round(time.time() - t0, 3)
 
-    return {
+    response = extract_final_answer(raw_response)
+    thinking = (
+        raw_response.split(_THINKING_DELIMITER, 1)[0]
+        .removeprefix(_THINKING_PREFIX).strip()
+        if _THINKING_DELIMITER in raw_response else None
+    )
+
+    result = {
         "model": model_path,
         "prompt": prompt,
         "response": response,
@@ -102,9 +186,13 @@ def run_prompt(
             "max_tokens": max_tokens,
             "temperature": temperature,
             "use_chat_template": use_chat_template,
+            "enable_thinking": enable_thinking,
         },
         "elapsed_s": elapsed,
     }
+    if thinking is not None:
+        result["thinking"] = thinking
+    return result
 
 
 def main():
@@ -122,6 +210,8 @@ def main():
                         help="Context window size in tokens (default: 4096)")
     parser.add_argument("--no-chat-template", action="store_true",
                         help="Disable chat template — use raw prompt (base models)")
+    parser.add_argument("--enable-thinking", action="store_true",
+                        help="Enable chain-of-thought thinking for supported models (e.g. Gemma 4)")
     args = parser.parse_args()
 
     llm = load_model(args.model, n_gpu_layers=args.n_gpu_layers,
@@ -133,6 +223,7 @@ def main():
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         use_chat_template=not args.no_chat_template,
+        enable_thinking=args.enable_thinking,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
