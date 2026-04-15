@@ -46,21 +46,23 @@ python -m venv .venv
 source .venv/bin/activate        # macOS / Linux
 # .venv\Scripts\activate         # Windows
 
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Add API keys
+# 3. Add API keys
 cp .env.example .env
 # Edit .env and fill in your keys
 ```
 
-> **Note:** `mlx-lm` (required for Apple Silicon local inference) installs only
-> on macOS with an M-series chip. On other platforms, comment out the `mlx-lm`
-> line in `requirements.txt` before running `pip install`.
+> **Platform note:** Step 4 differs by platform — see the relevant section below
+> before running `pip install`.
+> - **Frontier API models only:** `pip install -r requirements.txt` (all platforms)
+> - **Apple Silicon (MLX):** `pip install -r requirements.txt` (mlx-lm included)
+> - **NVIDIA / AMD / CPU (llama.cpp):** install llama-cpp-python first — see [llama.cpp section](#local-models--llamacpp--gguf-apple-silicon--nvidia--amd--cpu)
 
 ### Frontier models (API)
 
 ```bash
+# Install dependencies
+pip install -r requirements.txt   # comment out mlx-lm on Linux / Windows
+
 # Run 5 items on ARC Challenge FI with GPT-5.4
 source .env
 python scripts/run_frontier_jsonl.py \
@@ -125,14 +127,11 @@ python scripts/run_frontier_jsonl.py \
 and requires an Apple M-series chip. Models are downloaded automatically from
 Hugging Face on first use — no separate download step needed.
 
-> **Platform:** macOS with Apple Silicon (M1 or later) only. On other
-> platforms, remove or comment out the `mlx-lm` line in `requirements.txt`
-> before running `pip install -r requirements.txt`.
-
-Install mlx-lm:
+> **Platform:** macOS with Apple Silicon (M1 or later) only. On Linux / Windows,
+> comment out the `mlx-lm` line in `requirements.txt` before installing.
 
 ```bash
-pip install mlx-lm
+pip install -r requirements.txt
 ```
 
 Run evaluation:
@@ -174,54 +173,70 @@ Models used in this study (all from [mlx-community](https://huggingface.co/mlx-c
 `run_llama_jsonl.py` uses [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)
 and supports any platform that can run GGUF models.
 
-> **macOS:** llama-cpp-python requires **Python 3.14+** on macOS.
-> Python 3.13 (conda / miniconda) causes a silent crash at model load time.
-> Install Python 3.14 via `brew install python@3.14` and create the virtual
-> environment explicitly: `python3.14 -m venv .venv`
+#### Step 1 — Platform prerequisites
 
-> **Linux (Ubuntu + NVIDIA):** Install `cmake` and the CUDA toolkit before
-> building llama-cpp-python:
-> ```bash
-> sudo apt-get install -y cmake build-essential
-> # Verify CUDA is available:
-> nvcc --version && nvidia-smi
-> ```
-
-Install llama-cpp-python for your hardware **before** running
-`pip install -r requirements.txt`:
+**macOS:** llama-cpp-python requires **Python 3.14+**. Python 3.13 (conda /
+miniconda) causes a silent crash at model load time.
 
 ```bash
-# Apple Silicon — Metal GPU (macOS M-series)
+brew install python@3.14
+python3.14 -m venv .venv
+source .venv/bin/activate
+```
+
+**Linux (Ubuntu + NVIDIA):** Install build tools and verify GPU before proceeding:
+
+```bash
+sudo apt-get install -y cmake build-essential nvidia-cuda-toolkit
+nvcc --version   # confirm CUDA is available
+nvidia-smi       # confirm GPU is visible
+```
+
+#### Step 2 — Install llama-cpp-python with GPU support
+
+Install llama-cpp-python **before** `pip install -r requirements.txt`.
+
+**Apple Silicon — Metal:**
+
+```bash
 CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --no-binary llama-cpp-python
+```
 
-# NVIDIA GPU — CUDA (Linux / Windows)
-# Set CUDA_HOME if nvcc is not in /usr/local/cuda:
-export CUDA_HOME=/usr/lib/nvidia-cuda-toolkit   # adjust if needed
+**NVIDIA — CUDA (recommended: pre-built wheel, no compiler needed):**
+
+```bash
+# Replace cu121 with your CUDA version: cu122, cu123, cu124, cu125
+pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
+```
+
+Or build from source if a pre-built wheel is not available for your CUDA version:
+
+```bash
 CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --no-binary llama-cpp-python
+```
 
-# AMD GPU — Vulkan (Linux / Windows)
+**AMD — Vulkan:**
+
+```bash
 CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --no-binary llama-cpp-python
+```
 
-# CPU only (no GPU required, any platform)
+**CPU only:**
+
+```bash
 pip install llama-cpp-python
 ```
 
-Verify GPU support after install by loading a model and checking the output:
+#### Step 3 — Install remaining dependencies
 
 ```bash
-python -c "from llama_cpp import Llama; Llama(model_path='models/google_gemma-4-E4B-it-Q4_K_M.gguf', n_gpu_layers=-1, verbose=True)" 2>&1 | grep -iE "cuda|gpu|metal|offload|device"
-```
+# Linux / Windows: disable mlx-lm first
+sed -i 's/^mlx-lm/# mlx-lm/' requirements.txt
 
-If CUDA is active you will see lines such as `llm_load_tensors: using CUDA`.
-
-Install remaining dependencies (comment out `mlx-lm` on Linux/Windows first):
-
-```bash
-sed -i 's/^mlx-lm/# mlx-lm/' requirements.txt   # Linux / Windows
 pip install -r requirements.txt
 ```
 
-Download a GGUF model from Hugging Face:
+#### Step 4 — Download a GGUF model
 
 ```python
 from huggingface_hub import hf_hub_download
@@ -241,7 +256,20 @@ hf_hub_download(
 )
 ```
 
-Run evaluation:
+#### Step 5 — Verify GPU support
+
+Load a model and confirm GPU offloading in the output:
+
+```bash
+python -c "
+from llama_cpp import Llama
+Llama(model_path='models/google_gemma-4-E4B-it-Q4_K_M.gguf', n_gpu_layers=-1, verbose=True)
+" 2>&1 | grep -iE "cuda|gpu|metal|offload|device"
+```
+
+If GPU is active you will see lines such as `llm_load_tensors: using CUDA`.
+
+#### Step 6 — Run evaluation
 
 ```bash
 # Smoke test — 5 items with live accuracy output
@@ -251,7 +279,7 @@ python scripts/run_llama_jsonl.py \
     --output outputs/test_gemma4e4b_llama.jsonl \
     --n 5 --verbose
 
-# Full run — GPU (Metal / CUDA / Vulkan, all layers offloaded by default)
+# Full run — GPU (all layers offloaded by default)
 python scripts/run_llama_jsonl.py \
     --model models/google_gemma-4-E4B-it-Q4_K_M.gguf \
     --input data/finbench_combined_v1.jsonl \
@@ -313,7 +341,7 @@ python scripts/export_hf_dataset.py \
 scripts/
     run_frontier_jsonl.py   # Run frontier API models (OpenAI, Anthropic, Google, OpenRouter)
     run_eval_jsonl.py       # Run local MLX models (Apple Silicon)
-    run_llama_jsonl.py      # Run local GGUF models via llama.cpp (Windows / Linux / Intel Mac)
+    run_llama_jsonl.py      # Run local GGUF models via llama.cpp (all platforms)
     frontier_adapters.py    # Provider abstraction + API adapters (single-call & batch)
     score_eval.py           # Scoring: accuracy, F1, Wilson CI
     eval_config.py          # Task baselines and normalisation formula
