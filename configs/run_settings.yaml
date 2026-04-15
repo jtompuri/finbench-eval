@@ -3,9 +3,11 @@
 generation:
   temperature: 0.0
   # n_ctx: context window size for llama.cpp (tokens).
-  # FIN-bench prompts are short (max ~1300 tokens); 4096 provides ample headroom
-  # and matches 2× the lm-evaluation-harness default used by the official FIN-bench-v2.
-  # MLX ignores this setting (uses the model's built-in context window).
+  # FIN-bench prompts peak at ~1300 tokens (max 866 words); 4096 provides ample
+  # headroom and is 2× the lm-evaluation-harness default used by official FIN-bench-v2.
+  # Verified: n_ctx=4096 and n_ctx=131072 produce identical results on the longest
+  # FIN-bench prompts (finbench_hhh_alignment) — the difference is memory only.
+  # MLX does not use this setting; it uses the model's full context window automatically.
   n_ctx: 4096
   # max_tokens is model-specific.
   # Gemma 4 uses 150-400 tokens for chain-of-thought before the final answer;
