@@ -82,7 +82,7 @@ from runner_utils import LiveStats, SUMMARY_EVERY, load_jsonl, build_resume_set
 
 
 PROVIDERS = ("openai", "anthropic", "google", "openrouter",
-             "openai-thinking", "anthropic-thinking")
+             "openai-thinking", "anthropic-thinking", "anthropic-adaptive-thinking")
 
 
 def batch_meta_path(output_path: Path) -> Path:
@@ -174,7 +174,9 @@ def main():
     meta_path = batch_meta_path(output_path)
 
     # Resolve max_tokens default per provider
-    if args.provider in ("anthropic", "anthropic-thinking", "openai-thinking"):
+    if args.provider == "anthropic-adaptive-thinking":
+        default_max_tokens = 8192
+    elif args.provider in ("anthropic", "anthropic-thinking", "openai-thinking"):
         default_max_tokens = 2048
     else:
         default_max_tokens = 512

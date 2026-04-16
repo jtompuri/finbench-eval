@@ -657,6 +657,114 @@ def submit_anthropic_thinking_batch(
     return meta
 
 
+def run_anthropic_adaptive_thinking_prompt(
+    prompt: str,
+    model_id: str,
+    max_tokens: int = 8192,
+    temperature: float = 0.0,
+    effort: str = "high",
+) -> dict:
+    """
+    Run a single prompt through the Anthropic Messages API with adaptive thinking.
+
+    Adaptive thinking (thinking={"type": "adaptive"}) lets the model decide whether
+    to think and how much. Supports temperature=0.0 (unlike extended thinking).
+    Use output_config={"effort": effort} to control reasoning depth.
+    Note: extended thinking (budget_tokens) is NOT supported on Opus 4.7+; use this instead.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        raise ImportError("anthropic package required: pip install anthropic")
+
+    client = anthropic.Anthropic(api_key=_require_env("ANTHROPIC_API_KEY"))
+
+    def _call():
+        t0 = time.time()
+        message = client.messages.create(
+            model=model_id,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            thinking={"type": "adaptive"},
+            output_config={"effort": effort},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        elapsed = round(time.time() - t0, 3)
+        text_blocks = [b for b in (message.content or [])
+                       if getattr(b, "type", None) == "text"]
+        response = text_blocks[0].text if text_blocks else ""
+        return {
+            "model": model_id,
+            "response": response,
+            "generation_kwargs": {
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "thinking_type": "adaptive",
+                "thinking_effort": effort,
+            },
+            "elapsed_s": elapsed,
+        }
+
+    return _retry(_call)
+
+
+def submit_anthropic_adaptive_thinking_batch(
+    items: list,
+    model_id: str,
+    max_tokens: int = 8192,
+    temperature: float = 0.0,
+    effort: str = "high",
+) -> dict:
+    """
+    Submit a batch job to the Anthropic Message Batches API with adaptive thinking.
+
+    Uses thinking={"type": "adaptive"} and output_config={"effort": effort}.
+    Supports temperature=0.0 (unlike extended thinking which requires temperature=1).
+    Recommended for Opus 4.7+ where extended thinking (budget_tokens) is not supported.
+    Returns a metadata dict compatible with poll_anthropic_batch() and fetch_anthropic_batch().
+    """
+    try:
+        import anthropic
+    except ImportError:
+        raise ImportError("anthropic package required: pip install anthropic")
+
+    client = anthropic.Anthropic(api_key=_require_env("ANTHROPIC_API_KEY"))
+
+    requests = [
+        {
+            "custom_id": item["id"],
+            "params": {
+                "model": model_id,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "thinking": {"type": "adaptive"},
+                "output_config": {"effort": effort},
+                "messages": [{"role": "user", "content": item["prompt"]}],
+            },
+        }
+        for item in items
+    ]
+
+    batch = client.messages.batches.create(requests=requests)
+
+    meta = {
+        "provider": "anthropic",   # stored as "anthropic" so poll/fetch work unchanged
+        "batch_id": batch.id,
+        "model_id": model_id,
+        "n_items": len(items),
+        "submitted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "status": batch.processing_status,
+        "generation_kwargs": {
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "thinking_type": "adaptive",
+            "thinking_effort": effort,
+        },
+    }
+    print(f"Anthropic adaptive thinking batch submitted: {batch.id}  ({len(items)} items, model={model_id})")
+    return meta
+
+
 def poll_anthropic_batch(batch_id: str) -> dict:
     """Return current status of an Anthropic batch job."""
     import anthropic
@@ -940,6 +1048,31 @@ class AnthropicThinkingProvider(Provider):
         return status.get("status") == "ended"
 
 
+class AnthropicAdaptiveThinkingProvider(Provider):
+    """Anthropic Messages API with adaptive thinking (Claude Opus 4.7+).
+
+    Uses thinking={"type": "adaptive"} instead of extended thinking (budget_tokens),
+    which is not supported on Opus 4.7+. Supports temperature=0.0.
+    """
+
+    supports_batch = True
+
+    def call_single(self, prompt, model_id, max_tokens, temperature):
+        return run_anthropic_adaptive_thinking_prompt(prompt, model_id, max_tokens, temperature)
+
+    def call_batch_submit(self, items, model_id, max_tokens, temperature):
+        return submit_anthropic_adaptive_thinking_batch(items, model_id, max_tokens, temperature)
+
+    def poll_batch(self, batch_id):
+        return poll_anthropic_batch(batch_id)
+
+    def fetch_batch(self, batch_id, output_file_id=None):
+        return fetch_anthropic_batch(batch_id)
+
+    def batch_is_complete(self, status):
+        return status.get("status") == "ended"
+
+
 class GoogleProvider(Provider):
     """Google Gemini via AI Studio (concurrent calls only — no batch endpoint)."""
 
@@ -960,12 +1093,13 @@ class OpenRouterProvider(Provider):
 
 #: Registry mapping CLI provider names to Provider instances.
 PROVIDER_REGISTRY: dict[str, Provider] = {
-    "openai":               OpenAIProvider(),
-    "openai-thinking":      OpenAIThinkingProvider(),
-    "anthropic":            AnthropicProvider(),
-    "anthropic-thinking":   AnthropicThinkingProvider(),
-    "google":               GoogleProvider(),
-    "openrouter":           OpenRouterProvider(),
+    "openai":                        OpenAIProvider(),
+    "openai-thinking":               OpenAIThinkingProvider(),
+    "anthropic":                     AnthropicProvider(),
+    "anthropic-thinking":            AnthropicThinkingProvider(),
+    "anthropic-adaptive-thinking":   AnthropicAdaptiveThinkingProvider(),
+    "google":                        GoogleProvider(),
+    "openrouter":                    OpenRouterProvider(),
 }
 
 
