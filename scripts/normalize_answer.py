@@ -79,11 +79,15 @@ def extract_mcf_letter(text: str) -> str:
 #   "**Selitys:**"    "Selitys:"         (Finnish: explanation)
 #   "**Koska**"       "Koska:"           (Finnish: because/since)
 #   "**Huomio:**"     "Huomio:"          (Finnish: note)
-#   "### Miksi?"  "## Miksi"             (Markdown headings used as section labels)
+#   "### Selitys:"    "### Miksi?"       (Markdown headings with explanation keywords)
+#
+# NOTE: the heading pattern uses the same Finnish keyword list (not bare "#{1,3}\s")
+# to avoid matching answer headings like "## **Tyttö** ✅" or "## Vastaus: **X**"
+# that Claude (Anthropic) generates — where the chosen answer IS the heading text.
 _EXPLANATION_MARKER_RE = re.compile(
     r"\n+(?:"
-    r"\*{0,2}(?:Perustelu|Selitys|Koska|Huomio|Huom)\w*"  # Finnish explanation words (all inflections)
-    r"|#{1,3}\s"                                            # Markdown heading (##, ###)
+    r"\*{0,2}(?:Perustelu|Selitys|Koska|Huomio|Huom|Miksi)\w*"     # Finnish explanation words (bold or plain)
+    r"|#{1,3}\s+(?:Perustelu|Selitys|Koska|Huomio|Huom|Miksi)\w*"  # same words as Markdown headings
     r")",
     re.IGNORECASE,
 )

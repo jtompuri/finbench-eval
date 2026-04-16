@@ -194,6 +194,23 @@ class TestTrimToAnswerSection:
         text = "Valitsisin toisen vaihtoehdon.\n\n### Miksi?\n\n1. Koska..."
         assert _trim_to_answer_section(text) == "Valitsisin toisen vaihtoehdon."
 
+    def test_trims_at_markdown_selitys_heading(self):
+        # "### Selitys:" as a heading must also be caught (Claude/Anthropic pattern)
+        text = "Vastaus on tyttö.\n\n### Selitys:\n\nSulhanen on..."
+        assert _trim_to_answer_section(text) == "Vastaus on tyttö."
+
+    def test_answer_heading_not_trimmed(self):
+        # "## **Tyttö** ✅" is the ANSWER, not an explanation section — must NOT be trimmed.
+        # Claude (Anthropic) puts the chosen answer as a Markdown heading at the end
+        # of the response; trimming at it would remove the answer itself.
+        text = "## Analogia: poika : tyttö\n\nTarkastellaan...\n\n## **Tyttö** ✅\n\nPoika → tyttö"
+        assert _trim_to_answer_section(text) == text
+
+    def test_vastaus_heading_not_trimmed(self):
+        # "## Vastaus: **epälooginen**" is an answer section heading — must NOT be trimmed.
+        text = "## Analyysi\n\nReasoning...\n\n## Vastaus: **epälooginen**\n\nTämä on oikein."
+        assert _trim_to_answer_section(text) == text
+
     def test_no_marker_unchanged(self):
         text = "positiivinen"
         assert _trim_to_answer_section(text) == "positiivinen"
