@@ -21,16 +21,22 @@ Scored outputs for all 12 model configurations are available on
 
 | Model | Normalised score |
 |---|---|
-| Gemini 3 Flash | **0.919** |
-| Gemini 3.1 Pro | 0.918 |
+| Gemini 3 Flash | **0.926** |
+| Gemini 3.1 Pro | 0.914 |
 | GPT-5.4 (CoT) | 0.907 |
-| GPT-5.4 | 0.896 |
-| Claude Sonnet 4.6 | 0.880 |
-| Gemma 4 26B *(best local)* | 0.822 |
+| GPT-5.4 | 0.887 |
+| Claude Sonnet 4.6 | 0.877 |
+| Claude Sonnet 4.6 (CoT) | 0.874 |
+| Gemma 4 26B *(best local)* | 0.826 |
+| Gemma 3 27B | 0.802 |
+| Gemma 4 E4B (CoT) | 0.749 |
+| Gemma 4 E4B | 0.706 |
+| Poro-8B | 0.605 |
 | Llama 3.1 8B | 0.496 |
 
 Scores are normalised: $(s - b)/(1 - b)$, where $b$ is the random-chance
 baseline. Mean over 11 tasks (SQuAD excluded from aggregate).
+Baselines v2 (2026-04-13); MCF-word extractor fix applied (2026-04-16).
 
 ---
 
@@ -83,11 +89,16 @@ Supported `--provider` values:
 | `openai-thinking` | OpenAI Responses API with reasoning (CoT) |
 | `anthropic` | Anthropic Messages API (e.g. Claude Sonnet 4.6) |
 | `anthropic-thinking` | Anthropic extended thinking (CoT) |
+| `anthropic-adaptive-thinking` | Anthropic adaptive thinking — Claude Opus 4.7+ (CoT) |
 | `google` | Google Gemini via AI Studio |
 | `openrouter` | OpenRouter — unified access to third-party models |
 
+> **Note:** Extended thinking (`anthropic-thinking`) is not supported on
+> Claude Opus 4.7+. Use `anthropic-adaptive-thinking` instead, which uses
+> `thinking={"type": "adaptive"}` and supports `temperature=0.0`.
+
 Batch submission (50 % cost reduction, ~24 h turnaround) is supported for
-`openai` and `anthropic`:
+`openai`, `anthropic`, and `anthropic-adaptive-thinking`:
 
 ```bash
 # Submit batch
