@@ -6,6 +6,7 @@ import pytest
 from frontier_adapters import (
     PROVIDER_REGISTRY,
     AnthropicProvider,
+    AnthropicAdaptiveThinkingProvider,
     AnthropicThinkingProvider,
     GoogleProvider,
     OpenAIProvider,
@@ -101,7 +102,7 @@ class TestSuggestedWait:
 class TestProviderRegistry:
     def test_all_providers_registered(self):
         expected = {"openai", "openai-thinking", "anthropic", "anthropic-thinking",
-                    "google", "openrouter"}
+                    "anthropic-adaptive-thinking", "google", "openrouter"}
         assert set(PROVIDER_REGISTRY.keys()) == expected
 
     def test_get_provider_openai(self):
@@ -115,6 +116,9 @@ class TestProviderRegistry:
 
     def test_get_provider_anthropic_thinking(self):
         assert isinstance(get_provider("anthropic-thinking"), AnthropicThinkingProvider)
+
+    def test_get_provider_anthropic_adaptive_thinking(self):
+        assert isinstance(get_provider("anthropic-adaptive-thinking"), AnthropicAdaptiveThinkingProvider)
 
     def test_get_provider_google(self):
         assert isinstance(get_provider("google"), GoogleProvider)

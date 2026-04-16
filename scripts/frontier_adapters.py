@@ -51,6 +51,10 @@ def _gen_kwargs(max_tokens: int, temperature: float) -> dict:
     return {"max_tokens": max_tokens, "temperature": temperature}
 
 
+# Models that reject the temperature parameter entirely
+_ANTHROPIC_NO_TEMPERATURE = frozenset({"claude-opus-4-7"})
+
+
 def _is_retryable(exc: Exception) -> bool:
     """
     Return True if the exception represents a transient API error worth retrying.
@@ -246,12 +250,14 @@ def run_anthropic_prompt(
 
     def _call():
         t0 = time.time()
-        message = client.messages.create(
+        kwargs = dict(
             model=model_id,
             max_tokens=max_tokens,
-            temperature=temperature,
             messages=[{"role": "user", "content": prompt}],
         )
+        if model_id not in _ANTHROPIC_NO_TEMPERATURE:
+            kwargs["temperature"] = temperature
+        message = client.messages.create(**kwargs)
         elapsed = round(time.time() - t0, 3)
         # Filter for text blocks explicitly — avoids mis-reading thinking or tool_use blocks
         text_blocks = [b for b in (message.content or [])
@@ -572,16 +578,18 @@ def submit_anthropic_batch(
 
     client = anthropic.Anthropic(api_key=_require_env("ANTHROPIC_API_KEY"))
 
-    requests = [
-        {
-            "custom_id": item["id"],
-            "params": {
-                "model": model_id,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "messages": [{"role": "user", "content": item["prompt"]}],
-            },
+    def _make_params(item):
+        p = {
+            "model": model_id,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": item["prompt"]}],
         }
+        if model_id not in _ANTHROPIC_NO_TEMPERATURE:
+            p["temperature"] = temperature
+        return p
+
+    requests = [
+        {"custom_id": item["id"], "params": _make_params(item)}
         for item in items
     ]
 
@@ -681,14 +689,16 @@ def run_anthropic_adaptive_thinking_prompt(
 
     def _call():
         t0 = time.time()
-        message = client.messages.create(
+        kwargs = dict(
             model=model_id,
             max_tokens=max_tokens,
-            temperature=temperature,
             thinking={"type": "adaptive"},
             output_config={"effort": effort},
             messages=[{"role": "user", "content": prompt}],
         )
+        if model_id not in _ANTHROPIC_NO_TEMPERATURE:
+            kwargs["temperature"] = temperature
+        message = client.messages.create(**kwargs)
         elapsed = round(time.time() - t0, 3)
         text_blocks = [b for b in (message.content or [])
                        if getattr(b, "type", None) == "text"]
@@ -730,18 +740,20 @@ def submit_anthropic_adaptive_thinking_batch(
 
     client = anthropic.Anthropic(api_key=_require_env("ANTHROPIC_API_KEY"))
 
-    requests = [
-        {
-            "custom_id": item["id"],
-            "params": {
-                "model": model_id,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "thinking": {"type": "adaptive"},
-                "output_config": {"effort": effort},
-                "messages": [{"role": "user", "content": item["prompt"]}],
-            },
+    def _make_params(item):
+        p = {
+            "model": model_id,
+            "max_tokens": max_tokens,
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": effort},
+            "messages": [{"role": "user", "content": item["prompt"]}],
         }
+        if model_id not in _ANTHROPIC_NO_TEMPERATURE:
+            p["temperature"] = temperature
+        return p
+
+    requests = [
+        {"custom_id": item["id"], "params": _make_params(item)}
         for item in items
     ]
 
