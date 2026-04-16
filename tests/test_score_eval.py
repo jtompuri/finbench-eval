@@ -167,3 +167,95 @@ class TestScoreItem:
         item = self._make_item("gen", "Helsinki", response)
         result = score_item(item)
         assert result["exact_match"] is True
+
+
+# ---------------------------------------------------------------------------
+# run_meta propagation (issue #1 fix)
+# ---------------------------------------------------------------------------
+
+import json
+import tempfile
+from pathlib import Path
+from score_eval import load_jsonl, score_item, summarise
+
+
+class TestRunMetaPropagation:
+    """Verify that run_meta from the source JSONL is preserved in the score JSON."""
+
+    def _write_jsonl(self, path: Path, items: list[dict]) -> None:
+        with open(path, "w", encoding="utf-8") as f:
+            for item in items:
+                f.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+    def _score_file(self, jsonl_path: Path, out_path: Path) -> dict:
+        """Replicate what score_eval.main() does, minus argparse."""
+        items = load_jsonl(str(jsonl_path))
+        scored = [score_item(item) for item in items]
+        from score_eval import summarise
+        summary = summarise(scored)
+        run_meta = next(
+            (item["run_meta"] for item in items if "run_meta" in item), None
+        )
+        if run_meta:
+            summary["run_meta"] = run_meta
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f)
+        return summary
+
+    def _item(self, backend: str) -> dict:
+        return {
+            "id": "q1",
+            "task": "arc_challenge_fi",
+            "task_type": "mcf_letter",
+            "expected": "A",
+            "response": "A",
+            "run_meta": {
+                "backend": backend,
+                "max_tokens": 256,
+                "temperature": 0.0,
+            },
+        }
+
+    def test_run_meta_present_in_summary(self):
+        with tempfile.TemporaryDirectory() as td:
+            jsonl = Path(td) / "run.jsonl"
+            out   = Path(td) / "score.json"
+            self._write_jsonl(jsonl, [self._item("llama_cpp")])
+            summary = self._score_file(jsonl, out)
+            assert "run_meta" in summary
+            assert summary["run_meta"]["backend"] == "llama_cpp"
+
+    def test_run_meta_max_tokens_propagated(self):
+        with tempfile.TemporaryDirectory() as td:
+            jsonl = Path(td) / "run.jsonl"
+            out   = Path(td) / "score.json"
+            self._write_jsonl(jsonl, [self._item("vllm")])
+            summary = self._score_file(jsonl, out)
+            assert summary["run_meta"]["max_tokens"] == 256
+
+    def test_no_run_meta_when_absent(self):
+        """Items without run_meta produce a score JSON without run_meta key."""
+        item = {
+            "id": "q1", "task": "arc_challenge_fi", "task_type": "mcf_letter",
+            "expected": "A", "response": "A",
+        }
+        with tempfile.TemporaryDirectory() as td:
+            jsonl = Path(td) / "run.jsonl"
+            out   = Path(td) / "score.json"
+            self._write_jsonl(jsonl, [item])
+            summary = self._score_file(jsonl, out)
+            assert "run_meta" not in summary
+
+    def test_run_meta_from_first_item_with_it(self):
+        """run_meta is taken from the first item that has it (skips items without it)."""
+        items = [
+            {"id": "q0", "task": "arc_challenge_fi", "task_type": "mcf_letter",
+             "expected": "A", "response": "A"},
+            self._item("llama_cpp"),
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            jsonl = Path(td) / "run.jsonl"
+            out   = Path(td) / "score.json"
+            self._write_jsonl(jsonl, items)
+            summary = self._score_file(jsonl, out)
+            assert summary["run_meta"]["backend"] == "llama_cpp"

@@ -216,6 +216,17 @@ def rows_from_file(path: Path) -> list[dict]:
         "temperature": None,
     })
 
+    # Override MODEL_INFO defaults with actual run parameters when available.
+    # score_eval.py writes run_meta from the source JSONL into the score JSON,
+    # so llama.cpp and vLLM runs report the correct backend instead of "mlx_lm".
+    run_meta = data.get("run_meta", {})
+    if run_meta.get("backend"):
+        info = {**info, "backend": run_meta["backend"]}
+    if run_meta.get("max_tokens") is not None:
+        info = {**info, "max_tokens": run_meta["max_tokens"]}
+    if run_meta.get("temperature") is not None:
+        info = {**info, "temperature": run_meta["temperature"]}
+
     per_task = data.get("per_task", {})
     if not per_task:
         warnings.warn(f"{path}: no per_task data found", stacklevel=2)

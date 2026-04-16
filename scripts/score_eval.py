@@ -207,6 +207,15 @@ def main():
     scored = [score_item(item) for item in items]
     summary = summarise(scored)
 
+    # Preserve run_meta from the source JSONL so that aggregate_results.py can
+    # read the actual backend, max_tokens, and temperature instead of relying on
+    # the hardcoded MODEL_INFO table (which only stores MLX defaults).
+    run_meta = next(
+        (item["run_meta"] for item in items if "run_meta" in item), None
+    )
+    if run_meta:
+        summary["run_meta"] = run_meta
+
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
