@@ -70,6 +70,34 @@ def extract_mcf_letter(text: str) -> str:
     return ""
 
 
+# Markers that introduce reasoning/explanation sections in verbose model responses.
+# Everything after these markers is about why certain choices are wrong — matching
+# against that section would extract the REJECTED choices, not the chosen one.
+_EXPLANATION_MARKER_RE = re.compile(
+    r"\n+\*{0,2}(?:Perustelu|Selitys|Koska|Huomio|Huom)\b",
+    re.IGNORECASE,
+)
+
+
+def _trim_to_answer_section(text: str) -> str:
+    """Return only the answer-bearing portion of a verbose model response.
+
+    Finnish-language models often generate responses of the form:
+        "Valitsen vaihtoehdon: [CHOSEN CHOICE]
+
+         Perustelu: ... [WRONG CHOICE] on väärä koska ..."
+
+    Passing the full text to Pass 1/2 would match the WRONG CHOICE (mentioned
+    verbatim in the explanation) instead of the chosen one.  Trimming at the
+    first explanation marker restricts matching to the part of the response
+    where the answer is actually stated.
+    """
+    m = _EXPLANATION_MARKER_RE.search(text)
+    if m:
+        return text[: m.start()].strip()
+    return text
+
+
 def extract_mcf_word(text: str, expected_choices: list) -> str:
     """
     Find the best matching choice in the model response.
@@ -79,11 +107,15 @@ def extract_mcf_word(text: str, expected_choices: list) -> str:
        line before searching the full response. This prevents wrong matches when
        the model explains why other choices are incorrect (and thus mentions them
        in its reasoning).
-    1. Exact substring match — full response, original behaviour.
-    2. Word-overlap fallback — handles paraphrases and truncated reproductions.
-       Computes the fraction of each choice's content words that appear in the
-       response (recall-style overlap).  The choice with the highest overlap
-       wins if it exceeds OVERLAP_THRESHOLD; otherwise returns empty string.
+    1. Exact substring match — answer section only (text before any explanation
+       marker such as "Perustelu:" or "Selitys:"). Restricting to the answer
+       section prevents matching wrong choices that the model quotes while
+       explaining why it rejected them.
+    2. Word-overlap fallback — same answer section, handles paraphrases and
+       near-misses (e.g. a single missing or misspelled word).  Computes the
+       fraction of each choice's content words that appear in the response
+       (recall-style overlap).  The choice with the highest overlap wins if it
+       exceeds OVERLAP_THRESHOLD; otherwise returns empty string.
 
     Returns the matched choice string (lowercased), or empty string if none found.
     """
@@ -92,6 +124,11 @@ def extract_mcf_word(text: str, expected_choices: list) -> str:
     text = extract_final_answer(text)
     text_clean = strip_markdown(text).strip()
     text_norm = re.sub(r"\s+", " ", text_clean.lower())
+
+    # Answer section: text before the first explanation marker.  Pass 1 and 2
+    # operate on this shorter string; Pass 0 already targets the first line only.
+    answer_section = _trim_to_answer_section(text_clean)
+    answer_norm = re.sub(r"\s+", " ", answer_section.lower())
 
     # --- Pass 0: answer-line priority ---
     # Extract first line that starts with "Vastaus" (handles "Vastaus:", "Vastaus on")
@@ -106,24 +143,24 @@ def extract_mcf_word(text: str, expected_choices: list) -> str:
             if choice_norm in answer_line:
                 return choice.lower()
 
-    # --- Pass 1: exact substring match (full response) ---
+    # --- Pass 1: exact substring match (answer section only) ---
     for choice in expected_choices:
         choice_norm = re.sub(r"\s+", " ", choice.lower().strip())
-        if choice_norm in text_norm:
+        if choice_norm in answer_norm:
             return choice.lower()
 
-    # --- Pass 2: word-overlap fallback ---
+    # --- Pass 2: word-overlap fallback (answer section only) ---
     # Ignore very short stop-words (≤2 chars) to avoid noise
     def content_words(s: str) -> list:
         return [w for w in re.sub(r"[^\w\s]", "", s.lower()).split() if len(w) > 2]
 
-    text_words = set(content_words(text_norm))
+    answer_words = set(content_words(answer_norm))
     best_choice, best_score = "", 0.0
     for choice in expected_choices:
         cwords = content_words(choice)
         if not cwords:
             continue
-        overlap = sum(1 for w in cwords if w in text_words) / len(cwords)
+        overlap = sum(1 for w in cwords if w in answer_words) / len(cwords)
         if overlap > best_score:
             best_score, best_choice = overlap, choice
 
