@@ -73,8 +73,18 @@ def extract_mcf_letter(text: str) -> str:
 # Markers that introduce reasoning/explanation sections in verbose model responses.
 # Everything after these markers is about why certain choices are wrong — matching
 # against that section would extract the REJECTED choices, not the chosen one.
+#
+# Patterns covered:
+#   "**Perustelu:**"  "**Perustelut:**"  "Perustelu:" (Finnish: justification)
+#   "**Selitys:**"    "Selitys:"         (Finnish: explanation)
+#   "**Koska**"       "Koska:"           (Finnish: because/since)
+#   "**Huomio:**"     "Huomio:"          (Finnish: note)
+#   "### Miksi?"  "## Miksi"             (Markdown headings used as section labels)
 _EXPLANATION_MARKER_RE = re.compile(
-    r"\n+\*{0,2}(?:Perustelu|Selitys|Koska|Huomio|Huom)\b",
+    r"\n+(?:"
+    r"\*{0,2}(?:Perustelu|Selitys|Koska|Huomio|Huom)\w*"  # Finnish explanation words (all inflections)
+    r"|#{1,3}\s"                                            # Markdown heading (##, ###)
+    r")",
     re.IGNORECASE,
 )
 

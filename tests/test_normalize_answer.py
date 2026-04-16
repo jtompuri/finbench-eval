@@ -184,6 +184,16 @@ class TestTrimToAnswerSection:
         text = "Valitsen vaihtoehdon: positiivinen\n\n**Perustelu:**\n\nTeksti on iloinen."
         assert _trim_to_answer_section(text) == "Valitsen vaihtoehdon: positiivinen"
 
+    def test_trims_at_perustelut_plural(self):
+        # "Perustelut" (plural) must also be caught — Finnish models use both forms
+        text = "Vastaus: neutraali\n\n**Perustelut:**\n\nKoska teksti on tasapuolinen."
+        assert _trim_to_answer_section(text) == "Vastaus: neutraali"
+
+    def test_trims_at_markdown_heading(self):
+        # "### Miksi?" heading introduces the explanation section
+        text = "Valitsisin toisen vaihtoehdon.\n\n### Miksi?\n\n1. Koska..."
+        assert _trim_to_answer_section(text) == "Valitsisin toisen vaihtoehdon."
+
     def test_no_marker_unchanged(self):
         text = "positiivinen"
         assert _trim_to_answer_section(text) == "positiivinen"
