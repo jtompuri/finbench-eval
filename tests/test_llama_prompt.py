@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-from run_llama_prompt import _THINKING_DELIMITER, _THINKING_PREFIX
+from run_llama_prompt import _THINKING_DELIMITER, _THINKING_PREFIX, _strip_stop_tokens, _STOP_TOKENS
 
 
 # ---------------------------------------------------------------------------
@@ -73,3 +73,50 @@ class TestThinkingDelimiters:
         raw = f"{_THINKING_PREFIX}{_THINKING_DELIMITER}answer"
         thinking = raw.split(_THINKING_DELIMITER, 1)[0].removeprefix(_THINKING_PREFIX).strip()
         assert thinking == ""
+
+
+# ---------------------------------------------------------------------------
+# _strip_stop_tokens
+#
+# The unified code path uses llm() raw completion instead of
+# create_chat_completion(), so we defensively strip trailing stop tokens
+# that create_chat_completion() would have removed automatically.
+# ---------------------------------------------------------------------------
+
+class TestStripStopTokens:
+
+    def test_clean_response_unchanged(self):
+        assert _strip_stop_tokens("Vastaus on A.") == "Vastaus on A."
+
+    def test_strips_end_of_turn(self):
+        assert _strip_stop_tokens("Vastaus on A.<end_of_turn>") == "Vastaus on A."
+
+    def test_strips_eos(self):
+        assert _strip_stop_tokens("positiivinen<eos>") == "positiivinen"
+
+    def test_strips_im_end(self):
+        assert _strip_stop_tokens("answer<|im_end|>") == "answer"
+
+    def test_strips_endoftext(self):
+        assert _strip_stop_tokens("answer<|endoftext|>") == "answer"
+
+    def test_strips_trailing_whitespace_before_stop_token(self):
+        # strip() is called before token check, so whitespace before token is gone
+        assert _strip_stop_tokens("answer <end_of_turn>") == "answer"
+
+    def test_stop_token_in_middle_preserved(self):
+        # Only trailing stop tokens are stripped — mid-text occurrences stay
+        text = "choice A<end_of_turn> or choice B"
+        assert _strip_stop_tokens(text) == text
+
+    def test_empty_string(self):
+        assert _strip_stop_tokens("") == ""
+
+    def test_only_stop_token(self):
+        assert _strip_stop_tokens("<end_of_turn>") == ""
+
+    def test_all_stop_tokens_covered(self):
+        """Every token in _STOP_TOKENS is stripped when it appears at the end."""
+        for tok in _STOP_TOKENS:
+            assert _strip_stop_tokens(f"answer{tok}") == "answer", \
+                f"_strip_stop_tokens failed to strip '{tok}'"

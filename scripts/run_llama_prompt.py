@@ -42,6 +42,20 @@ from normalize_answer import extract_final_answer
 from runner_utils import THINKING_DELIMITER as _THINKING_DELIMITER, \
                          THINKING_PREFIX    as _THINKING_PREFIX
 
+# Special tokens that mark the end of a model turn.  llama-cpp-python normally
+# stops generation before these, but we strip them defensively from raw llm()
+# output to match the clean content returned by create_chat_completion().
+_STOP_TOKENS = ("<end_of_turn>", "<eos>", "<|im_end|>", "<|endoftext|>")
+
+
+def _strip_stop_tokens(text: str) -> str:
+    """Strip trailing model stop tokens from raw llm() completion output."""
+    text = text.strip()
+    for tok in _STOP_TOKENS:
+        if text.endswith(tok):
+            text = text[: -len(tok)].rstrip()
+    return text
+
 
 def load_model(
     model_path: str,
@@ -141,7 +155,12 @@ def run_prompt(
     Run a single prompt and return a structured result dict compatible with
     the JSONL output schema used by run_eval_jsonl.py and score_eval.py.
 
-    use_chat_template=True wraps the prompt in the model's instruct format.
+    use_chat_template=True wraps the prompt in the model's instruct format via
+    apply_chat_template(), passing enable_thinking explicitly to the Jinja2
+    template in both thinking and non-thinking mode.  This keeps the prompt
+    format consistent with the MLX path (run_mlx_prompt.py) and avoids the
+    asymmetry of using create_chat_completion() for non-thinking runs.
+
     enable_thinking=True activates chain-of-thought for models that support it
     (e.g. Gemma 4). The thinking block is stripped from `response` via
     extract_final_answer() and stored separately in `thinking`, matching the
@@ -149,23 +168,17 @@ def run_prompt(
     """
     t0 = time.time()
 
-    if use_chat_template and enable_thinking:
-        # Render the template manually so we can pass enable_thinking=True,
-        # then use the raw completion endpoint (create_chat_completion does not
-        # expose template variables).
-        formatted = apply_chat_template(llm, prompt, enable_thinking=True)
-        output = llm(formatted, max_tokens=max_tokens, temperature=temperature)
-        raw_response = (output["choices"][0]["text"] or "").strip()
-    elif use_chat_template:
-        output = llm.create_chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-        raw_response = (output["choices"][0]["message"].get("content") or "").strip()
+    # Always use apply_chat_template + raw llm() completion so that
+    # enable_thinking is passed to the Jinja2 template explicitly in both
+    # thinking and non-thinking mode.  This keeps the prompt format identical
+    # between the two paths and avoids relying on create_chat_completion's
+    # internal template rendering which does not expose template variables.
+    if use_chat_template:
+        formatted = apply_chat_template(llm, prompt, enable_thinking=enable_thinking)
     else:
-        output = llm(prompt, max_tokens=max_tokens, temperature=temperature)
-        raw_response = (output["choices"][0]["text"] or "").strip()
+        formatted = prompt
+    output = llm(formatted, max_tokens=max_tokens, temperature=temperature)
+    raw_response = _strip_stop_tokens((output["choices"][0]["text"] or "").strip())
 
     elapsed = round(time.time() - t0, 3)
 
