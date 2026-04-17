@@ -11,7 +11,7 @@ This repository accompanies the paper:
 > on Finnish Benchmarks**  
 > Janne Tompuri, University of Helsinki, 2026
 
-Scored outputs for all 12 model configurations are available on
+Scored outputs for all 14 model configurations are available on
 [Hugging Face Datasets](https://huggingface.co/datasets/jtompuri/finbench-eval-outputs)
 (see [Data](#data)).
 
@@ -21,7 +21,9 @@ Scored outputs for all 12 model configurations are available on
 
 | Model | Normalised score |
 |---|---|
-| Gemini 3 Flash | **0.926** |
+| Claude Opus 4.7 | **0.927** |
+| Claude Opus 4.7 (CoT) | **0.927** |
+| Gemini 3 Flash | 0.926 |
 | Gemini 3.1 Pro | 0.914 |
 | GPT-5.4 (CoT) | 0.907 |
 | GPT-5.4 | 0.887 |
@@ -62,6 +64,8 @@ cp .env.example .env
 > - **Apple Silicon (MLX):** `pip install -r requirements-mlx.txt`
 > - **NVIDIA / AMD / CPU (llama.cpp):** install llama-cpp-python first, then
 >   `pip install -r requirements-cuda.txt` — see the [llama.cpp section](#local-models--llamacpp--gguf-apple-silicon--nvidia--amd--cpu) below
+> - **Linux + NVIDIA (vLLM):** `sudo apt install python3-dev` then
+>   `pip install -r requirements-vllm.txt` — see the [vLLM section](#local-models--vllm-linux--nvidia-cuda) below
 
 ---
 
@@ -454,35 +458,8 @@ python scripts/export_hf_dataset.py \
 
 ## Repository structure
 
-```
-scripts/
-    run_frontier_jsonl.py   # Run frontier API models (OpenAI, Anthropic, Google, OpenRouter)
-    run_eval_jsonl.py       # Run local MLX models (Apple Silicon)
-    run_llama_jsonl.py      # Run local GGUF models via llama.cpp (all platforms)
-    run_vllm_jsonl.py       # Run local HuggingFace models via vLLM (Linux + CUDA)
-    runner_utils.py         # Shared utilities (LiveStats, load_jsonl, resume, thinking helpers)
-    frontier_adapters.py    # Provider abstraction + API adapters (single-call & batch)
-    score_eval.py           # Scoring: accuracy, F1, Wilson CI
-    eval_config.py          # Task baselines and normalisation formula
-    normalize_answer.py     # Answer extraction (MCF letter/word, generative)
-    export_hf_dataset.py    # Export scored outputs to Hugging Face Datasets format
-    aggregate_results.py    # Aggregate per-task scores → tidy CSV
-    plot_figures.py         # Reproduce all paper figures
-    plot_style.py           # Shared matplotlib style
-    build_subset_jsonl.py   # Build evaluation subsets from raw task data
-    run_mlx_prompt.py       # Single-prompt MLX runner (smoke tests)
-    run_llama_prompt.py     # Single-prompt llama.cpp runner (smoke tests)
-    run_vllm_prompt.py      # Single-prompt vLLM runner (smoke tests)
-    compute_bertscore_squad.py  # BERTScore validation for SQuAD FI
-    analysis/
-        final_summary.py        # Per-model summary table
-        compare_runs.py         # Pairwise run comparison
-        mcnemar_test.py         # McNemar significance tests (BH-corrected)
-        analysis_normalized.py  # Normalised score analysis
-
-data/
-    finbench_combined_v1.jsonl   # Fixed 1,146-item evaluation subset
-```
+See [`docs/repository_structure.md`](docs/repository_structure.md) for the full
+script and data directory reference.
 
 ---
 
@@ -494,8 +471,14 @@ data/
   log-probability scores.
 - Random-chance baselines are task-specific; see `scripts/eval_config.py`.
 - SQuAD FI uses token-level F1 and is excluded from the normalised aggregate.
-  BERTScore validation confirms token-F1 underestimates frontier model
-  performance by 28–45 pp due to Finnish morphological variation.
+  Multi-metric analysis (Voikko Lemma-F1, chrF, Finnish BERTScore) shows that
+  verbosity — not morphology alone — is the primary cause of the cross-tier
+  inversion: frontier models produce full grammatically inflected answers while
+  gold spans are short extracted fragments. Finnish BERTScore
+  (TurkuNLP/bert-base-finnish-cased-v1) gives the most faithful re-ranking,
+  with frontier models gaining +0.30–0.47 and local models +0.30–0.43 over
+  token-F1. Voikko lemmatisation alone adds only +0.016 for the most affected
+  model (Claude Sonnet 4.6).
 
 ---
 
