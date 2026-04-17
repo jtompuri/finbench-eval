@@ -92,24 +92,40 @@ def run_ollama_prompt(
     model_id: str,
     max_tokens: int,
     temperature: float,
+    reasoning_effort: str | None = None,
 ) -> dict:
     def _call():
         t0 = time.time()
-        completion = client.chat.completions.create(
+        kwargs = dict(
             model=model_id,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=temperature,
         )
+        if reasoning_effort:
+            # Ollama's OpenAI-compatible endpoint maps reasoning_effort
+            # (high/medium/low/none) to its internal Think parameter.
+            kwargs["extra_body"] = {"reasoning_effort": reasoning_effort}
+        completion = client.chat.completions.create(**kwargs)
         elapsed = round(time.time() - t0, 3)
-        response = completion.choices[0].message.content or ""
+        msg = completion.choices[0].message
+        content = msg.content or ""
+        # Ollama returns thinking in the `reasoning` attribute on the
+        # message object (extra field, not in OpenAI spec). Merge into
+        # response with <think>...</think> tags so downstream scoring
+        # behaves consistently with other CoT runs in the pipeline.
+        reasoning = getattr(msg, "reasoning", None) or ""
+        if reasoning:
+            response = f"<think>\n{reasoning}\n</think>\n\n{content}"
+        else:
+            response = content
+        gen_kwargs = {"max_tokens": max_tokens, "temperature": temperature}
+        if reasoning_effort:
+            gen_kwargs["reasoning_effort"] = reasoning_effort
         return {
             "model": model_id,
             "response": response,
-            "generation_kwargs": {
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            },
+            "generation_kwargs": gen_kwargs,
             "elapsed_s": elapsed,
         }
 
@@ -138,6 +154,11 @@ def main():
     parser.add_argument("--concurrency", type=int, default=1,
                         help="Number of concurrent requests (Ollama Pro: 3, "
                              "Max: 10). Default: 1 (sequential).")
+    parser.add_argument("--reasoning-effort", default=None,
+                        choices=["high", "medium", "low", "none"],
+                        help="Enable CoT/thinking on thinking-capable models. "
+                             "Ollama maps this to its internal Think parameter. "
+                             "Default: None (no thinking).")
     args = parser.parse_args()
 
     try:
@@ -164,6 +185,7 @@ def main():
         "base_url": args.base_url,
         "max_tokens": args.max_tokens,
         "temperature": args.temperature,
+        "reasoning_effort": args.reasoning_effort,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
@@ -182,6 +204,7 @@ def main():
             result = run_ollama_prompt(
                 client, item["prompt"], args.model_id,
                 args.max_tokens, args.temperature,
+                reasoning_effort=args.reasoning_effort,
             )
             return ({**item, **result, "run_meta": run_meta},
                     result.get("response", ""), None)
