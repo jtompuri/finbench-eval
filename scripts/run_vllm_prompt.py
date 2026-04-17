@@ -43,6 +43,7 @@ def load_model(
     max_model_len: int = 8192,
     trust_remote_code: bool = False,
     verbose: bool = False,
+    quantization: str | None = None,
 ):
     """
     Load a model with vLLM.
@@ -54,6 +55,10 @@ def load_model(
         allocates KV cache dynamically up to this limit.
     trust_remote_code: allow executing code from the model repository
         (default: False). Enable only for models that require it.
+    quantization: on-the-fly quantization scheme (e.g. "bitsandbytes",
+        "awq", "gptq", "fp8"). Default None loads the model in its
+        native precision. "bitsandbytes" requires `pip install bitsandbytes`
+        and additionally sets load_format="bitsandbytes".
     """
     try:
         from vllm import LLM
@@ -62,7 +67,7 @@ def load_model(
             "vllm is required: pip install -r requirements-vllm.txt\n"
             "vLLM is supported on Linux with NVIDIA CUDA only."
         )
-    return LLM(
+    kwargs = dict(
         model=model_path,
         tensor_parallel_size=tensor_parallel_size,
         gpu_memory_utilization=gpu_memory_utilization,
@@ -70,6 +75,11 @@ def load_model(
         trust_remote_code=trust_remote_code,
         disable_log_stats=not verbose,
     )
+    if quantization:
+        kwargs["quantization"] = quantization
+        if quantization == "bitsandbytes":
+            kwargs["load_format"] = "bitsandbytes"
+    return LLM(**kwargs)
 
 
 def _format_prompt(
