@@ -313,9 +313,22 @@ than llama.cpp for batched inference.
 
 > **Platform:** Linux with NVIDIA CUDA only. Not supported on macOS or AMD.
 
+System prerequisite (Python C headers for Triton runtime kernel compilation):
+
+```bash
+sudo apt install -y python3-dev
+```
+
+Then install vLLM and dependencies:
+
 ```bash
 pip install -r requirements-vllm.txt
 ```
+
+> `pip` will print a dependency conflict warning because vllm pins
+> `transformers<5` but `requirements-vllm.txt` requests `transformers>=5.0.0`
+> for Gemma 4 support. The warning is harmless — vllm imports and runs
+> successfully with transformers 5.x.
 
 ```bash
 # Smoke test — 5 items with live accuracy output

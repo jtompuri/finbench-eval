@@ -1,13 +1,22 @@
 # NVIDIA GPU — vLLM local inference (Linux + CUDA only)
-# Requires CUDA 12.1+ and Python 3.9–3.12.
+# Requires CUDA 12.1+ and Python 3.9+ (tested on 3.13).
+#
+# System prerequisite: python3-dev (Python C headers for Triton runtime
+# kernel compilation). On Ubuntu: sudo apt install python3-dev
 #
 # Install with: pip install -r requirements-vllm.txt
 #
 # Models are loaded directly from Hugging Face — no GGUF download needed.
 # A Hugging Face account may be required for gated models (e.g. Gemma):
-#   huggingface-cli login
+#   hf auth login
 
 -r requirements.txt
 
 # --- Local inference (vLLM — NVIDIA CUDA only) ---
 vllm>=0.4.0
+
+# Override vllm's restrictive transformers<5 pin so newer architectures
+# (e.g. Gemma 4) load correctly. pip will print a dependency conflict
+# warning — this is harmless; vllm imports and runs successfully.
+transformers>=5.0.0
+huggingface_hub>=1.0.0
