@@ -47,6 +47,8 @@ MODEL_MAP = [
     ("combined_openai.jsonl",               "score_openai_combined.json",            "GPT-5.4",                      "gpt-5.4-2026-03-05"),
     ("combined_anthropic.jsonl",            "score_anthropic_combined.json",         "Claude Sonnet 4.6",            "claude-sonnet-4-6"),
     ("combined_anthropic_thinking.jsonl",   "score_anthropic_thinking_combined.json","Claude Sonnet 4.6 (think)",    "claude-sonnet-4-6"),
+    ("combined_opus47.jsonl",               "score_opus47_combined.json",            "Claude Opus 4.7",              "claude-opus-4-7"),
+    ("combined_opus47_think.jsonl",         "score_opus47_think_combined.json",      "Claude Opus 4.7 (think)",      "claude-opus-4-7"),
     ("combined_gemma4.jsonl",               "score_gemma4_combined.json",            "Gemma 4 26B",                  "gemma-4-26b-it-4bit"),
     ("combined_gemma3.jsonl",               "score_gemma3_combined.json",            "Gemma 3 27B",                  "gemma-3-27b-it-qat-4bit"),
     ("combined_gemma4e4b_think.jsonl",      "score_gemma4e4b_think_combined.json",   "Gemma 4 E4B (think)",          "gemma-4-e4b-it-4bit"),
