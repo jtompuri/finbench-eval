@@ -200,26 +200,64 @@ def extract_mcf_word(text: str, expected_choices: list) -> str:
     # --- Pass 1b: numbered/ordinal choice reference ---
     # Some models (especially Gemma 4 CoT) say "Vaihtoehto 2 on paras" or
     # "Toinen vaihtoehto on paras vastaus" instead of quoting the choice text.
-    # Map Finnish ordinals and numbered references to choice indices.
+    # Map Finnish ordinals and numbered references to choice indices — BUT
+    # only when the reference appears in a positive-selection context.
+    #
+    # Negative-context example to reject:
+    #   "Paras vastaus on: '[choice A text]'. ... Toinen vaihtoehto ei ole hyvä."
+    # Here "Toinen vaihtoehto" refers to the REJECTED choice. Matching it
+    # would flip a correct extraction to the wrong choice.
     _ORDINALS_FI = {
         "ensimmäinen": 0, "toinen": 1, "kolmas": 2, "neljäs": 3,
         "viides": 4, "kuudes": 5,
     }
-    # Look for "vaihtoehto N" pattern first (more explicit)
-    num_match = re.search(r"vaihtoehto\s+(\d)\b", answer_norm)
-    if num_match:
-        idx = int(num_match.group(1)) - 1
-        if 0 <= idx < len(expected_choices):
-            return expected_choices[idx].lower()
-    # Look for "<ordinal> vaihtoehto" pattern
-    ord_match = re.search(
+    _POSITIVE_CTX_RE = re.compile(
+        r"(paras|oikea|parempi|sopivin|valitsen|suosittelen|hyväksyn)"
+    )
+    _NEGATIVE_CTX_RE = re.compile(
+        r"(ei ole|ei sovi|on huono|on väärä|ei ole hyvä|ei ole paras|"
+        r"vaikkei|valitettavasti|ei kannata|ei voi valita|kannata valita|"
+        r"on vaarallinen|on vastuuton|en koskaan|vahingoittamis|"
+        r"on epäasialli|on sopimat|ei ole turvalli|on epäeetti)"
+    )
+
+    def _select_by_ref(start: int, end: int, idx: int) -> str:
+        """Return choice if context around ref is positive, else empty.
+
+        Negative check uses a short 20-char window after the ordinal so
+        that rejections like "toinen vaihtoehto ei ole hyvä" are caught,
+        but negatives ABOUT the OTHER ordinal 30+ chars later do not
+        disqualify an otherwise-positive reference.
+
+        Positive check uses a wider 40-char ±window because selection
+        keywords like "paras vastaus on" often precede the ordinal.
+        """
+        before = answer_norm[max(0, start - 40):start]
+        after_short = answer_norm[end:min(len(answer_norm), end + 20)]
+        after_wide = answer_norm[end:min(len(answer_norm), end + 40)]
+        # Reject if immediate after context is negative
+        if _NEGATIVE_CTX_RE.search(after_short):
+            return ""
+        # Accept only if positive keyword appears in ±40 char window
+        if _POSITIVE_CTX_RE.search(before + " " + after_wide):
+            if 0 <= idx < len(expected_choices):
+                return expected_choices[idx].lower()
+        return ""
+
+    # Collect all ordinal/numbered refs with their positions
+    refs = []
+    for m in re.finditer(r"vaihtoehto\s+(\d)\b", answer_norm):
+        refs.append((m.start(), m.end(), int(m.group(1)) - 1))
+    for m in re.finditer(
         r"\b(ensimmäinen|toinen|kolmas|neljäs|viides|kuudes)\s+vaihtoehto\b",
         answer_norm,
-    )
-    if ord_match:
-        idx = _ORDINALS_FI[ord_match.group(1)]
-        if 0 <= idx < len(expected_choices):
-            return expected_choices[idx].lower()
+    ):
+        refs.append((m.start(), m.end(), _ORDINALS_FI[m.group(1)]))
+    refs.sort()  # process in document order
+    for start, end, idx in refs:
+        picked = _select_by_ref(start, end, idx)
+        if picked:
+            return picked
 
     # --- Pass 2: word-overlap fallback (answer section only) ---
     # Ignore very short stop-words (≤2 chars) to avoid noise
