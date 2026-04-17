@@ -18,6 +18,7 @@ def extract_final_answer(text: str) -> str:
     Supports multiple thinking-block formats that vary by backend:
       - MLX Gemma 4:        <|channel>thought...<channel|>[answer]
       - Ollama Gemma 4:     <|think|>...</think>[answer]  or  <|think|>...<|end|>[answer]
+      - Ollama Gemma 4:     <|think|>...<turn|>\n[answer]<turn|>   (some items)
       - OpenAI-compat:      <think>...</think>[answer]
 
     Opening tags differ across backends, but all end with one of:
@@ -25,7 +26,12 @@ def extract_final_answer(text: str) -> str:
     We locate the last occurrence of any of these closing markers and return
     everything after it. This is robust to asymmetric open/close tags.
 
-    If no closing marker is present, return the text unchanged.
+    Fallback for <turn|>-terminated Ollama outputs: if the text contains a
+    `<|think|>` open marker but none of the standard closers, treat <turn|>
+    as a segment separator and return the last non-empty segment (trailing
+    <turn|> is stripped first so "...<turn|>\nB<turn|>" → "B").
+
+    If no marker is present at all, return the text unchanged.
     """
     close_markers = ("</think>", "<|end|>", "<channel|>")
     best_end = -1
@@ -37,6 +43,19 @@ def extract_final_answer(text: str) -> str:
             best_mark = mark
     if best_end >= 0:
         return text[best_end + len(best_mark):].strip()
+
+    # Fallback: <turn|>-only termination (Ollama Gemma 4 edge case).
+    # Gate on <|think|> to avoid over-stripping responses that merely
+    # mention <turn|> inside normal text.
+    if "<|think|>" in text and "<turn|>" in text:
+        stripped = text.rstrip()
+        # Strip trailing <turn|> tokens (possibly separated by whitespace)
+        while stripped.endswith("<turn|>"):
+            stripped = stripped[: -len("<turn|>")].rstrip()
+        last_turn = stripped.rfind("<turn|>")
+        if last_turn >= 0:
+            return stripped[last_turn + len("<turn|>"):].strip()
+
     return text.strip()
 
 
@@ -136,6 +155,10 @@ def extract_mcf_word(text: str, expected_choices: list) -> str:
        marker such as "Perustelu:" or "Selitys:"). Restricting to the answer
        section prevents matching wrong choices that the model quotes while
        explaining why it rejected them.
+    1b. Numbered/ordinal choice reference — "Vaihtoehto 2 on paras" or
+       "Toinen vaihtoehto on..." mapped to expected_choices index.  Catches
+       Gemma 4 CoT responses that reference choices by position instead of
+       quoting their text.
     2. Word-overlap fallback — same answer section, handles paraphrases and
        near-misses (e.g. a single missing or misspelled word).  Computes the
        fraction of each choice's content words that appear in the response
@@ -173,6 +196,30 @@ def extract_mcf_word(text: str, expected_choices: list) -> str:
         choice_norm = re.sub(r"\s+", " ", choice.lower().strip())
         if choice_norm in answer_norm:
             return choice.lower()
+
+    # --- Pass 1b: numbered/ordinal choice reference ---
+    # Some models (especially Gemma 4 CoT) say "Vaihtoehto 2 on paras" or
+    # "Toinen vaihtoehto on paras vastaus" instead of quoting the choice text.
+    # Map Finnish ordinals and numbered references to choice indices.
+    _ORDINALS_FI = {
+        "ensimmäinen": 0, "toinen": 1, "kolmas": 2, "neljäs": 3,
+        "viides": 4, "kuudes": 5,
+    }
+    # Look for "vaihtoehto N" pattern first (more explicit)
+    num_match = re.search(r"vaihtoehto\s+(\d)\b", answer_norm)
+    if num_match:
+        idx = int(num_match.group(1)) - 1
+        if 0 <= idx < len(expected_choices):
+            return expected_choices[idx].lower()
+    # Look for "<ordinal> vaihtoehto" pattern
+    ord_match = re.search(
+        r"\b(ensimmäinen|toinen|kolmas|neljäs|viides|kuudes)\s+vaihtoehto\b",
+        answer_norm,
+    )
+    if ord_match:
+        idx = _ORDINALS_FI[ord_match.group(1)]
+        if 0 <= idx < len(expected_choices):
+            return expected_choices[idx].lower()
 
     # --- Pass 2: word-overlap fallback (answer section only) ---
     # Ignore very short stop-words (≤2 chars) to avoid noise
