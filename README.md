@@ -1,6 +1,6 @@
 # FIN-bench-eval
 
-Evaluation pipeline for [FIN-bench-v2](https://github.com/TurkuNLP/FIN-bench-v2) —
+Evaluation pipeline for [FIN-bench-v2](https://github.com/TurkuNLP/FIN-bench-v2),
 a Finnish language model benchmark covering 12 tasks across factual recall,
 commonsense reasoning, reading comprehension, sentiment/semantic tasks,
 and ethical alignment.
@@ -63,9 +63,9 @@ cp .env.example .env
 > - **Frontier API models only:** `pip install -r requirements.txt`
 > - **Apple Silicon (MLX):** `pip install -r requirements-mlx.txt`
 > - **NVIDIA / AMD / CPU (llama.cpp):** install llama-cpp-python first, then
->   `pip install -r requirements-cuda.txt` — see the [llama.cpp section](#local-models--llamacpp--gguf-apple-silicon--nvidia--amd--cpu) below
+>   `pip install -r requirements-cuda.txt`. See the [llama.cpp section](#local-models--llamacpp--gguf-apple-silicon--nvidia--amd--cpu) below.
 > - **Linux + NVIDIA (vLLM):** `sudo apt install python3-dev` then
->   `pip install -r requirements-vllm.txt` — see the [vLLM section](#local-models--vllm-linux--nvidia-cuda) below
+>   `pip install -r requirements-vllm.txt`. See the [vLLM section](#local-models--vllm-linux--nvidia-cuda) below.
 
 ---
 
@@ -93,13 +93,13 @@ Supported `--provider` values:
 | `openai-thinking` | OpenAI Responses API with reasoning (CoT) |
 | `anthropic` | Anthropic Messages API (e.g. Claude Sonnet 4.6) |
 | `anthropic-thinking` | Anthropic extended thinking (CoT) |
-| `anthropic-adaptive-thinking` | Anthropic adaptive thinking — Claude Opus 4.7+ (CoT) |
+| `anthropic-adaptive-thinking` | Anthropic adaptive thinking for Claude Opus 4.7+ (CoT) |
 | `google` | Google Gemini via AI Studio |
-| `openrouter` | OpenRouter — unified access to third-party models |
+| `openrouter` | OpenRouter: unified access to third-party models |
 
-> **Note:** Extended thinking (`anthropic-thinking`) is not supported on
-> Claude Opus 4.7+. Use `anthropic-adaptive-thinking` instead, which uses
-> `thinking={"type": "adaptive"}` and supports `temperature=0.0`.
+Extended thinking (`anthropic-thinking`) is not supported on Claude Opus 4.7+.
+Use `anthropic-adaptive-thinking` instead, which uses
+`thinking={"type": "adaptive"}` and supports `temperature=0.0`.
 
 Batch submission (50 % cost reduction, ~24 h turnaround) is supported for
 `openai`, `anthropic`, and `anthropic-adaptive-thinking`:
@@ -138,7 +138,7 @@ python scripts/run_frontier_jsonl.py \
 
 ---
 
-### Local models — Apple Silicon (MLX)
+### Local models: Apple Silicon (MLX)
 
 `run_eval_jsonl.py` uses [mlx-lm](https://github.com/ml-explore/mlx-examples/tree/main/llms)
 and requires an Apple M-series chip. Models are downloaded automatically from
@@ -151,7 +151,7 @@ pip install -r requirements-mlx.txt
 ```
 
 ```bash
-# Smoke test — 5 items with live accuracy output
+# Smoke test: 5 items with live accuracy output
 python scripts/run_eval_jsonl.py \
     --model mlx-community/gemma-4-e4b-it-4bit \
     --input data/finbench_combined_v1.jsonl \
@@ -184,12 +184,12 @@ Models used in this study (all from [mlx-community](https://huggingface.co/mlx-c
 
 ---
 
-### Local models — llama.cpp / GGUF (Apple Silicon · NVIDIA · AMD · CPU)
+### Local models: llama.cpp / GGUF (Apple Silicon · NVIDIA · AMD · CPU)
 
 `run_llama_jsonl.py` uses [llama-cpp-python](https://github.com/abetlen/llama-cpp-python)
 and supports any platform that can run GGUF models.
 
-#### Step 1 — Platform prerequisites
+#### Step 1: Platform prerequisites
 
 **macOS:** llama-cpp-python requires **Python 3.14+**. Python 3.13 (conda /
 miniconda) causes a silent crash at model load time. Create a fresh virtual
@@ -209,17 +209,17 @@ nvcc --version   # confirm CUDA is available
 nvidia-smi       # confirm GPU is visible
 ```
 
-#### Step 2 — Install llama-cpp-python
+#### Step 2: Install llama-cpp-python
 
 Install llama-cpp-python **before** `pip install -r requirements-cuda.txt`.
 
-**Apple Silicon — Metal:**
+**Apple Silicon (Metal):**
 
 ```bash
 CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python --no-binary llama-cpp-python
 ```
 
-**NVIDIA — CUDA (recommended: pre-built wheel, no compiler needed):**
+**NVIDIA (CUDA, recommended: pre-built wheel, no compiler needed):**
 
 ```bash
 # Check your CUDA version first
@@ -235,7 +235,7 @@ Or build from source if a pre-built wheel is not available for your CUDA version
 CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --no-binary llama-cpp-python
 ```
 
-**AMD — Vulkan:**
+**AMD (Vulkan):**
 
 ```bash
 CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --no-binary llama-cpp-python
@@ -247,25 +247,25 @@ CMAKE_ARGS="-DGGML_VULKAN=on" pip install llama-cpp-python --no-binary llama-cpp
 pip install llama-cpp-python
 ```
 
-#### Step 3 — Install dependencies
+#### Step 3: Install dependencies
 
 ```bash
 pip install -r requirements-cuda.txt
 ```
 
-#### Step 4 — Download a GGUF model
+#### Step 4: Download a GGUF model
 
 ```python
 from huggingface_hub import hf_hub_download
 
-# Gemma 4 E4B (used in this study) — ~5 GB
+# Gemma 4 E4B (used in this study, ~5 GB)
 hf_hub_download(
     repo_id="bartowski/google_gemma-4-E4B-it-GGUF",
     filename="google_gemma-4-E4B-it-Q4_K_M.gguf",
     local_dir="./models",
 )
 
-# Gemma 3 27B — ~17 GB
+# Gemma 3 27B (~17 GB)
 hf_hub_download(
     repo_id="bartowski/gemma-3-27b-it-GGUF",
     filename="gemma-3-27b-it-Q4_K_M.gguf",
@@ -273,7 +273,7 @@ hf_hub_download(
 )
 ```
 
-#### Step 5 — Verify GPU support
+#### Step 5: Verify GPU support
 
 Load a model and confirm GPU offloading in the output:
 
@@ -286,17 +286,17 @@ Llama(model_path='models/google_gemma-4-E4B-it-Q4_K_M.gguf', n_gpu_layers=-1, ve
 
 If GPU is active you will see lines such as `llm_load_tensors: using CUDA`.
 
-#### Step 6 — Run evaluation
+#### Step 6: Run evaluation
 
 ```bash
-# Smoke test — 5 items with live accuracy output
+# Smoke test: 5 items with live accuracy output
 python scripts/run_llama_jsonl.py \
     --model models/google_gemma-4-E4B-it-Q4_K_M.gguf \
     --input data/finbench_combined_v1.jsonl \
     --output outputs/test_gemma4e4b_llama.jsonl \
     --n 5 --verbose
 
-# Full run — GPU (all layers offloaded by default)
+# Full run, GPU (all layers offloaded by default)
 python scripts/run_llama_jsonl.py \
     --model models/google_gemma-4-E4B-it-Q4_K_M.gguf \
     --input data/finbench_combined_v1.jsonl \
@@ -319,12 +319,12 @@ python scripts/run_llama_jsonl.py \
 
 ---
 
-### Local models — vLLM (Linux + NVIDIA CUDA)
+### Local models: vLLM (Linux + NVIDIA CUDA)
 
 `run_vllm_jsonl.py` uses [vLLM](https://github.com/vllm-project/vllm) and loads
-models directly from Hugging Face — no GGUF conversion needed. vLLM's
-PagedAttention allocates KV cache dynamically, making it significantly faster
-than llama.cpp for batched inference.
+models directly from Hugging Face; no GGUF conversion is needed. vLLM's
+PagedAttention allocates KV cache dynamically, making it faster than llama.cpp
+for batched inference.
 
 > **Platform:** Linux with NVIDIA CUDA only. Not supported on macOS or AMD.
 
@@ -342,18 +342,18 @@ pip install -r requirements-vllm.txt
 
 > `pip` will print a dependency conflict warning because vllm pins
 > `transformers<5` but `requirements-vllm.txt` requests `transformers>=5.0.0`
-> for Gemma 4 support. The warning is harmless — vllm imports and runs
+> for Gemma 4 support. The warning is harmless; vllm imports and runs
 > successfully with transformers 5.x.
 
 ```bash
-# Smoke test — 5 items with live accuracy output
+# Smoke test: 5 items with live accuracy output
 python scripts/run_vllm_jsonl.py \
     --model google/gemma-4-e4b-it \
     --input data/finbench_combined_v1.jsonl \
     --output outputs/test_gemma4e4b_vllm.jsonl \
     --n 5 --verbose
 
-# Full run — full batch (recommended for runs ≲10 min wall clock)
+# Full batch (recommended for runs ≲10 min wall clock).
 # All prompts in one generate() call. Maximum throughput, no intermediate saves.
 python scripts/run_vllm_jsonl.py \
     --model google/gemma-4-e4b-it \
@@ -361,7 +361,7 @@ python scripts/run_vllm_jsonl.py \
     --output outputs/combined_gemma4e4b_vllm.jsonl \
     --batch
 
-# Long / unstable runs — chunked batch with resume safety
+# Long or unstable runs: chunked batch with resume safety.
 # Flushes after each chunk; supports --resume on interruption.
 # At most N items lost if the run is interrupted.
 python scripts/run_vllm_jsonl.py \
@@ -387,7 +387,7 @@ Three inference modes (mutually exclusive):
 | Chunked batch | `--batch-size N` | after every N items | ✓ | long runs (>30 min), unstable hardware, or when you need progress visibility |
 | Sequential | *(default)* | after every item | ✓ | development, smoke tests with `--n` |
 
-#### Empirical scaling — RTX 3090, 1146 items, BF16
+#### Empirical scaling (RTX 3090, 1146 items, BF16)
 
 Wall-clock time per batch size (engine init ~60 s constant; remainder is generation):
 
@@ -402,8 +402,8 @@ Wall-clock time per batch size (engine init ~60 s constant; remainder is generat
 Both models reach maximum throughput at `--batch`. Gemma 4 E4B saturates around
 batch 200 (≤7 % gain beyond); Llama 3.1 8B keeps scaling and benefits most
 from full batch (35 % faster than `--batch-size 200`). The chunked-batch
-overhead is therefore both model- and dataset-dependent — for the canonical
-1146-item benchmark, full batch is uniformly fastest. Reach for
+overhead is both model- and dataset-dependent, but for the canonical
+1146-item benchmark, full batch is uniformly fastest. Use
 `--batch-size N --resume` only when interruption recovery matters more than
 throughput.
 
@@ -412,7 +412,7 @@ Key options:
 | Flag | Default | Description |
 |---|---|---|
 | `--batch-size N` | — | Prompts per `generate()` call; flush after each chunk (recommended: 50–200) |
-| `--batch` | off | All prompts in one `generate()` call — no intermediate saves |
+| `--batch` | off | All prompts in one `generate()` call; no intermediate saves |
 | `--tensor-parallel-size N` | 1 | Number of GPUs for tensor parallelism |
 | `--gpu-memory-utilization F` | 0.90 | Fraction of GPU memory for model + KV cache |
 | `--max-model-len N` | 8192 | Maximum sequence length (prompt + response) |
@@ -472,7 +472,7 @@ script and data directory reference.
 - Random-chance baselines are task-specific; see `scripts/eval_config.py`.
 - SQuAD FI uses token-level F1 and is excluded from the normalised aggregate.
   Multi-metric analysis (Voikko Lemma-F1, chrF, Finnish BERTScore) shows that
-  verbosity — not morphology alone — is the primary cause of the cross-tier
+  verbosity, not morphology alone, is the primary cause of the cross-tier
   inversion: frontier models produce full grammatically inflected answers while
   gold spans are short extracted fragments. Finnish BERTScore
   (TurkuNLP/bert-base-finnish-cased-v1) gives the most faithful re-ranking,
