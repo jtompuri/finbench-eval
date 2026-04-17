@@ -15,18 +15,29 @@ def extract_final_answer(text: str) -> str:
     """
     Extract the final answer from a response that may contain a thinking block.
 
-    Gemma 4 with reasoning enabled wraps chain-of-thought in:
-        <|channel>thought
-        [reasoning...]
-        <channel|>[final answer]
+    Supports multiple thinking-block formats that vary by backend:
+      - MLX Gemma 4:        <|channel>thought...<channel|>[answer]
+      - Ollama Gemma 4:     <|think|>...</think>[answer]  or  <|think|>...<|end|>[answer]
+      - OpenAI-compat:      <think>...</think>[answer]
 
-    If the delimiter is present, return only the text after <channel|>.
-    If not present, return the text unchanged.
+    Opening tags differ across backends, but all end with one of:
+        </think>, <|end|>, <channel|>
+    We locate the last occurrence of any of these closing markers and return
+    everything after it. This is robust to asymmetric open/close tags.
+
+    If no closing marker is present, return the text unchanged.
     """
-    delimiter = "<channel|>"
-    if delimiter in text:
-        return text.split(delimiter, 1)[1].strip()
-    return text
+    close_markers = ("</think>", "<|end|>", "<channel|>")
+    best_end = -1
+    best_mark = ""
+    for mark in close_markers:
+        idx = text.rfind(mark)
+        if idx > best_end:
+            best_end = idx
+            best_mark = mark
+    if best_end >= 0:
+        return text[best_end + len(best_mark):].strip()
+    return text.strip()
 
 
 def strip_markdown(text: str) -> str:
