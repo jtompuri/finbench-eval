@@ -31,7 +31,9 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from tqdm import tqdm
@@ -133,6 +135,9 @@ def main():
                         help="Show running accuracy per task")
     parser.add_argument("--limit", type=int, default=None,
                         help="Run only the first N pending items (smoke test)")
+    parser.add_argument("--concurrency", type=int, default=1,
+                        help="Number of concurrent requests (Ollama Pro: 3, "
+                             "Max: 10). Default: 1 (sequential).")
     args = parser.parse_args()
 
     try:
@@ -172,38 +177,57 @@ def main():
     open_mode = "a" if completed_ids else "w"
     n_errors = 0
 
-    with open(output_path, open_mode, encoding="utf-8") as out_f:
-        pbar = tqdm(pending, desc=f"ollama-cloud ({args.model_id})")
-        for item in pbar:
-            try:
-                result = run_ollama_prompt(
-                    client, item["prompt"], args.model_id,
-                    args.max_tokens, args.temperature,
-                )
-                record = {**item, **result, "run_meta": run_meta}
-                response = result.get("response", "")
-            except Exception as exc:
-                print(f"\nError on {item.get('id', '?')}: {exc}", file=sys.stderr)
-                response = ""
-                record = {
-                    **item,
-                    "response": "",
-                    "elapsed_s": None,
-                    "model": args.model_id,
-                    "generation_kwargs": {
-                        "max_tokens": args.max_tokens,
-                        "temperature": args.temperature,
-                    },
-                    "run_meta": run_meta,
-                    "error": str(exc),
-                }
-                n_errors += 1
+    def _process(item: dict) -> tuple[dict, str, str | None]:
+        try:
+            result = run_ollama_prompt(
+                client, item["prompt"], args.model_id,
+                args.max_tokens, args.temperature,
+            )
+            return ({**item, **result, "run_meta": run_meta},
+                    result.get("response", ""), None)
+        except Exception as exc:
+            record = {
+                **item,
+                "response": "",
+                "elapsed_s": None,
+                "model": args.model_id,
+                "generation_kwargs": {
+                    "max_tokens": args.max_tokens,
+                    "temperature": args.temperature,
+                },
+                "run_meta": run_meta,
+                "error": str(exc),
+            }
+            return (record, "", str(exc))
 
+    write_lock = threading.Lock()
+
+    def _write(record: dict, response: str, err: str | None):
+        nonlocal n_errors
+        with write_lock:
             out_f.write(json.dumps(record, ensure_ascii=False) + "\n")
             out_f.flush()
-
+            if err is not None:
+                print(f"\nError on {record.get('id', '?')}: {err}",
+                      file=sys.stderr)
+                n_errors += 1
             if stats is not None:
-                stats.update(item, response)
+                stats.update(record, response)
+
+    with open(output_path, open_mode, encoding="utf-8") as out_f:
+        if args.concurrency > 1:
+            print(f"  Concurrency: {args.concurrency}")
+            with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+                futures = {pool.submit(_process, it): it for it in pending}
+                for fut in tqdm(as_completed(futures), total=len(pending),
+                                desc=f"ollama-cloud ({args.model_id})"):
+                    record, response, err = fut.result()
+                    _write(record, response, err)
+        else:
+            for item in tqdm(pending,
+                             desc=f"ollama-cloud ({args.model_id})"):
+                record, response, err = _process(item)
+                _write(record, response, err)
 
     print(f"\nDone. {len(pending) - n_errors}/{len(pending)} successful, "
           f"{n_errors} errors.")
