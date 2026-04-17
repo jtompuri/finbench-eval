@@ -407,6 +407,26 @@ overhead is both model- and dataset-dependent, but for the canonical
 `--batch-size N --resume` only when interruption recovery matters more than
 throughput.
 
+#### Choosing `--max-model-len`
+
+vLLM pre-allocates KV-cache slots for `max_num_seqs` (default 256) × `max_model_len`
+tokens, so an oversized context wastes VRAM even when the actual prompts are
+much shorter. FIN-bench-v2 prompts peak at ~1,300 tokens; combined with the
+per-model `max_tokens` response budget, a safe `--max-model-len` for this
+benchmark is:
+
+| Model configuration | Suggested `--max-model-len` | Why |
+|---|---:|---|
+| Non-CoT models (Llama 3.1, Poro-8B, Gemma 4 E4B without `--enable-thinking`) | **2048** | 1,300 prompt + 512 response + ~240 buffer |
+| Gemma 4 E4B with `--enable-thinking` (4,096-token CoT budget) | 8192 | 1,300 prompt + 4,096 CoT + 2,796 buffer |
+| Generic default (works everywhere) | 4096 | Matches llama.cpp `n_ctx` setting |
+
+Dropping to 2048 on non-CoT models lets you keep `--gpu-memory-utilization`
+at 0.90 even when a 4-bit quantized model (`--quantization bitsandbytes` / `awq` / `gptq`)
+would otherwise hit OOM during sampler warm-up on a 24 GB card.
+Quality is unaffected: `max_model_len` bounds the model's working window,
+not its weights or generation sampling.
+
 Key options:
 
 | Flag | Default | Description |
