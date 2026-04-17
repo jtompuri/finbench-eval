@@ -135,6 +135,30 @@ def _retry(fn, retries: int = 3, backoff: float = 5.0):
             time.sleep(wait)
 
 
+def _extract_anthropic_content(content) -> tuple[str, str]:
+    """
+    Split Anthropic message content blocks into (response_text, thinking_text).
+
+    - "text" blocks are concatenated into the response.
+    - "thinking" blocks are concatenated into the thinking string.
+    - "redacted_thinking" blocks are represented with a "[redacted]" marker
+      (the encrypted .data is not decodable by us).
+    Returns ("", "") if content is empty or None.
+    """
+    content = content or []
+    text_parts: list[str] = []
+    thinking_parts: list[str] = []
+    for block in content:
+        btype = getattr(block, "type", None)
+        if btype == "text":
+            text_parts.append(getattr(block, "text", "") or "")
+        elif btype == "thinking":
+            thinking_parts.append(getattr(block, "thinking", "") or "")
+        elif btype == "redacted_thinking":
+            thinking_parts.append("[redacted]")
+    return ("".join(text_parts), "\n\n".join(p for p in thinking_parts if p))
+
+
 # ---------------------------------------------------------------------------
 # Single-call adapters  (smoke tests and sequential runs)
 # ---------------------------------------------------------------------------
@@ -306,12 +330,11 @@ def run_anthropic_thinking_prompt(
             messages=[{"role": "user", "content": prompt}],
         )
         elapsed = round(time.time() - t0, 3)
-        text_blocks = [b for b in (message.content or [])
-                       if getattr(b, "type", None) == "text"]
-        response = text_blocks[0].text if text_blocks else ""
+        response, thinking = _extract_anthropic_content(message.content)
         return {
             "model": model_id,
             "response": response,
+            "thinking": thinking,
             "generation_kwargs": {
                 "max_tokens": max_tokens,
                 "temperature": 1,
@@ -700,12 +723,11 @@ def run_anthropic_adaptive_thinking_prompt(
             kwargs["temperature"] = temperature
         message = client.messages.create(**kwargs)
         elapsed = round(time.time() - t0, 3)
-        text_blocks = [b for b in (message.content or [])
-                       if getattr(b, "type", None) == "text"]
-        response = text_blocks[0].text if text_blocks else ""
+        response, thinking = _extract_anthropic_content(message.content)
         return {
             "model": model_id,
             "response": response,
+            "thinking": thinking,
             "generation_kwargs": {
                 "max_tokens": max_tokens,
                 "temperature": temperature,
@@ -814,12 +836,13 @@ def fetch_anthropic_batch(batch_id: str) -> list:
     n_errors = 0
     for result in client.messages.batches.results(batch_id):
         if result.result.type == "succeeded":
-            content = result.result.message.content or []
-            text_blocks = [b for b in content if getattr(b, "type", None) == "text"]
-            response_text = text_blocks[0].text if text_blocks else ""
+            response_text, thinking_text = _extract_anthropic_content(
+                result.result.message.content
+            )
             results.append({
                 "id": result.custom_id,
                 "response": response_text,
+                "thinking": thinking_text,
                 "elapsed_s": None,
                 "model": "",
                 "generation_kwargs": {},
@@ -831,6 +854,7 @@ def fetch_anthropic_batch(batch_id: str) -> list:
             results.append({
                 "id": result.custom_id,
                 "response": "",
+                "thinking": "",
                 "elapsed_s": None,
                 "model": "",
                 "generation_kwargs": {},

@@ -15,7 +15,8 @@ generation:
   # Frontier models use conservative caps; squad_fi (gen) may need more headroom.
   max_tokens:
     default: 512        # Gemma 3 and any model without thinking blocks
-    gemma4: 1024        # Gemma 4: ~400-600 thinking + ~50-100 answer headroom
+    gemma4: 1024        # Gemma 4 26B MoE: non-CoT, short MCF answers
+    gemma4_think: 4096  # Gemma 4 26B MoE: thinking enabled, needs budget for CoT + answer
     openai: 512         # OpenAI: MCF answers are short; squad_fi may need 256+
     anthropic: 1024     # Anthropic: extended thinking capable; leave headroom
     google: 512         # Google Gemini: MCF answers are short (non-thinking models)
