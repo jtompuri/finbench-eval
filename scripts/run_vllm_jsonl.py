@@ -120,6 +120,11 @@ def main():
                              "the final answer is extracted into 'response'.")
     parser.add_argument("--trust-remote-code", action="store_true",
                         help="Allow executing code from the model repository (use with caution)")
+    parser.add_argument("--quantization", default=None,
+                        choices=[None, "bitsandbytes", "awq", "gptq", "fp8", "compressed-tensors"],
+                        help="On-the-fly quantization scheme. Default: None (use model's native "
+                             "precision). 'bitsandbytes' enables 4-bit on-the-fly quantization "
+                             "from BF16 weights and additionally requires `pip install bitsandbytes`.")
     parser.add_argument("--n", type=int, default=None,
                         help="Limit to first N items (useful for smoke tests)")
     parser.add_argument("--verbose", action="store_true",
@@ -164,7 +169,8 @@ def main():
         print("All items already completed — nothing to do.")
         return
 
-    print(f"Loading model: {args.model}")
+    quant_str = args.quantization or "native"
+    print(f"Loading model: {args.model}  [quantization={quant_str}]")
     print(f"max_tokens={max_tokens}  temperature={temperature}  "
           f"max_model_len={args.max_model_len}  "
           f"gpu_memory_utilization={args.gpu_memory_utilization}")
@@ -175,6 +181,7 @@ def main():
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=args.max_model_len,
         trust_remote_code=args.trust_remote_code,
+        quantization=args.quantization,
     )
 
     use_chat_template = not args.no_chat_template
@@ -192,6 +199,7 @@ def main():
         "model":                  args.model,
         "model_key":              args.model_key,
         "backend":                "vllm",
+        "quantization":           args.quantization,
         "input":                  args.input,
         "max_tokens":             max_tokens,
         "temperature":            temperature,

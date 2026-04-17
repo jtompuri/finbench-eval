@@ -418,6 +418,7 @@ Key options:
 | `--max-model-len N` | 8192 | Maximum sequence length (prompt + response) |
 | `--enable-thinking` | off | Activate chain-of-thought for Gemma 4 and compatible models |
 | `--trust-remote-code` | off | Allow executing code from the model repository |
+| `--quantization SCHEME` | none | On-the-fly quantization: `bitsandbytes`, `awq`, `gptq`, `fp8`, `compressed-tensors`. Default loads native precision. `bitsandbytes` requires `pip install bitsandbytes`; lower `--gpu-memory-utilization` to 0.80 to fit the BF16→4-bit conversion peak. |
 
 ---
 

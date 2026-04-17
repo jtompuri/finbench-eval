@@ -263,3 +263,55 @@ class TestBatchModeLabel:
     def test_chunked_label_different_sizes(self):
         assert self._label(batch_size=50)  == "chunked/50"
         assert self._label(batch_size=200) == "chunked/200"
+
+
+# ---------------------------------------------------------------------------
+# Tests: load_model() quantization parameter passthrough
+# ---------------------------------------------------------------------------
+
+from run_vllm_prompt import load_model
+
+
+class TestLoadModelQuantization:
+    """Verify --quantization plumbing into vllm.LLM() kwargs."""
+
+    def _captured_kwargs(self, **load_model_kwargs):
+        """Call load_model() and return the kwargs that vllm.LLM was called with."""
+        captured = {}
+
+        def _fake_LLM(**kwargs):
+            captured.update(kwargs)
+            return MagicMock()
+
+        sys.modules["vllm"].LLM = _fake_LLM
+        load_model("dummy/model", **load_model_kwargs)
+        return captured
+
+    def test_default_no_quantization_kwargs(self):
+        """Default call must not pass quantization or load_format to LLM."""
+        kwargs = self._captured_kwargs()
+        assert "quantization" not in kwargs
+        assert "load_format" not in kwargs
+
+    def test_bitsandbytes_sets_both_quantization_and_load_format(self):
+        """bitsandbytes requires load_format='bitsandbytes' alongside quantization."""
+        kwargs = self._captured_kwargs(quantization="bitsandbytes")
+        assert kwargs["quantization"] == "bitsandbytes"
+        assert kwargs["load_format"] == "bitsandbytes"
+
+    def test_awq_passes_quantization_only(self):
+        """AWQ models load via quantization=awq, no load_format override needed."""
+        kwargs = self._captured_kwargs(quantization="awq")
+        assert kwargs["quantization"] == "awq"
+        assert "load_format" not in kwargs
+
+    def test_gptq_passes_quantization_only(self):
+        kwargs = self._captured_kwargs(quantization="gptq")
+        assert kwargs["quantization"] == "gptq"
+        assert "load_format" not in kwargs
+
+    def test_explicit_none_quantization_treated_as_default(self):
+        """quantization=None must behave the same as not passing the argument."""
+        kwargs = self._captured_kwargs(quantization=None)
+        assert "quantization" not in kwargs
+        assert "load_format" not in kwargs
