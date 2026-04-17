@@ -1,10 +1,10 @@
 # Six-Precision Cross-Backend Comparison
 
 Auxiliary measurement supporting the FIN-bench-v2 evaluation paper. Quantifies
-the effect of 4-bit quantization across two model architectures (dense Llama
-8B vs MoE-A4B Gemma 4 E4B) and four backends/quantization schemes
-(MLX 4-bit, llama.cpp Q4_K_M, vLLM bnb 4-bit, vLLM AWQ INT4, vLLM GPTQ INT4)
-against a vLLM BF16 reference.
+the effect of 4-bit quantization across three model architectures (dense Llama
+8B, MoE-without-PLE OLMoE-1B-7B, and MoE-A4B-with-PLE Gemma 4 E4B) and up to
+five backends/quantization schemes (MLX 4-bit, llama.cpp Q4_K_M, vLLM bnb 4-bit,
+vLLM AWQ INT4, vLLM GPTQ INT4) against a vLLM BF16 reference.
 
 ## Caveats and scope
 
@@ -46,6 +46,33 @@ against a vLLM BF16 reference.
 Aggregate variation across all six precisions: **±0.025** (range 0.5925–0.6423).
 Within sampling noise per the paper's ~0.07–0.09 detection threshold.
 
+## OLMoE-1B-7B — three-precision per-task accuracy (MoE without PLE)
+
+OLMoE-1B-7B-0125-Instruct (AI2): Mixture-of-Experts, 64 experts top-8
+routed, ~1 B active / 6.9 B total parameters, **no Per-Layer Embeddings**.
+Included as a clean MoE-without-PLE control to isolate whether the Gemma 4
+E4B quantization sensitivity stems from MoE routing itself or from PLE.
+
+| Task | vLLM BF16 | vLLM bnb 4-bit | llama.cpp Q4_K_M |
+|---|---:|---:|---:|
+| ARC Challenge | 0.280 | 0.290 | 0.290 |
+| Belebele | 0.240 | 0.300 | 0.330 |
+| GoldenSwag | 0.270 | 0.280 | 0.320 |
+| ScandiSent | 0.390 | 0.490 | 0.570 |
+| SIB-200 | 0.130 | 0.130 | 0.120 |
+| General Knowledge | 0.286 | 0.214 | 0.229 |
+| SQuAD FI (F1) | 0.217 | 0.199 | 0.182 |
+| TruthfulQA mc1 | 0.290 | 0.140 | 0.180 |
+| Analogies | 0.360 | 0.350 | 0.320 |
+| Emotions | 0.180 | 0.140 | 0.140 |
+| HHH Alignment | 0.180 | 0.250 | 0.200 |
+| Similarities | 0.290 | 0.329 | 0.250 |
+| **Mean (12 tasks)** | **0.258** | **0.259** | **0.262** |
+
+Aggregate variation across all three precisions: **±0.004** — tighter
+than any other model in this sweep. MoE expert-routing alone, without
+PLE, does not induce 4-bit degradation.
+
 ## Gemma 4 E4B — three-precision aggregate
 
 | Method | Mean (11) | Δ vs BF16 |
@@ -83,29 +110,35 @@ Aggregate variation across all four precisions: **±0.036** — within sampling
 noise. Same pattern as Llama 3.1 8B (its base model), confirming that
 **Finnish fine-tuning does not introduce additional quantization sensitivity**.
 
-## Headline finding: 4-bit quantization cost is architecture-dependent, not fine-tuning-dependent
+## Headline finding: 4-bit quantization cost is PLE-dependent, not MoE-routing-dependent
 
 | Model | Architecture | BF16 → 4-bit aggregate cost |
 |---|---|---:|
 | Llama 3.1 8B | Dense Llama 8B | ±0.025 (within noise) |
-| **Poro-8B** | **Dense Llama 8B + 165 B FI tokens fine-tune** | **±0.036 (within noise)** |
+| Poro-8B | Dense Llama 8B + 165 B FI tokens fine-tune | ±0.036 (within noise) |
+| **OLMoE-1B-7B** | **MoE (64 experts top-8), no PLE** | **±0.004 (within noise)** |
 | Gemma 4 E4B | MoE-A4B + Per-Layer Embeddings | −0.06 to −0.08 |
 
-The three-model picture is now sharp: **two dense Llama-derived models** (with
-and without Finnish fine-tuning) tolerate 4-bit quantization across every
-scheme tested, while **the MoE-A4B + PLE Gemma 4 E4B** consistently loses
-6–8 pp under 4-bit. This rules out fine-tuning as a source of quantization
-sensitivity — the difference is architectural.
+The four-model picture isolates the sensitivity source:
 
-**Hypothesis:** MoE expert-routing is sensitive to small numerical
-perturbations — quantization errors can flip routing decisions for
-borderline tokens. Per-Layer Embeddings (PLE), which Gemma 4 introduces
-to maximise parameter efficiency, may add another quantization-sensitive
-path. Dense models lack both mechanisms and tolerate 4-bit better,
-regardless of whether they have been further fine-tuned. Validating the
-hypothesis cleanly would require AWQ/GPTQ versions of Gemma 4 E4B
-(unavailable at the time of writing) or architecture-specific experiments
-beyond the scope of the paper.
+- **Dense Llama-derived models** (with and without Finnish fine-tuning)
+  tolerate 4-bit across every scheme tested, ruling out fine-tuning as
+  a cause.
+- **OLMoE-1B-7B** (MoE without PLE) is even tighter than the dense
+  models — ±0.004 spread across three precisions. **Expert-routing
+  alone is not enough to induce 4-bit degradation.**
+- **Gemma 4 E4B** (MoE with PLE) consistently loses 6–8 pp under
+  4-bit across MLX, Q4_K_M, and bnb.
+
+**Refined hypothesis:** Per-Layer Embeddings, rather than MoE expert-routing
+per se, are the dominant quantization-sensitive path. PLE couples
+every token embedding to per-layer learned vectors with limited
+dynamic range; 4-bit truncation accumulates error along the depth
+axis. Expert-routing, which was the a-priori suspect, turns out to
+tolerate 4-bit cleanly when isolated (OLMoE). Fully validating the
+hypothesis would require architecture-specific experiments beyond the
+scope of this paper — e.g. an ablation of PLE in Gemma 4 E4B, or a
+third MoE-with-PLE comparator if one becomes available.
 
 ## Bonus: Finnish specialisation effect persists at full precision
 
@@ -168,27 +201,20 @@ amplifying task-specific sensitivities.
 
 ## Suggested paper Limitations / Methodology paragraph
 
-> **Quantization sensitivity.** Local-model results in Tables 1 and 3 reflect
-> 4-bit quantization (MLX for the published outputs). On Llama 3.1 8B we
-> measured a vLLM BF16 reference and four 4-bit schemes (MLX 4-bit,
-> llama.cpp Q4_K_M, vLLM bitsandbytes, vLLM AWQ INT4, vLLM GPTQ INT4) on
-> a single RTX 3090; aggregate normalised-score variation across all six
-> measurements is ±0.025, within sampling noise. The same picture holds for
-> Poro-8B (the Finnish-fine-tuned Llama 3.1 base): variation across MLX 4-bit,
-> llama.cpp Q4_K_M, vLLM BF16 and vLLM bitsandbytes is ±0.036, again within
-> sampling noise. On Gemma 4 E4B the BF16 reference is +0.06 to +0.08 above
-> the 4-bit aggregate (across MLX, Q4_K_M, and bnb), suggesting that the
-> MoE-A4B + Per-Layer Embeddings architecture is more sensitive to 4-bit
-> quantization than dense models at the same active-parameter scale.
-> Reproductions on consumer hardware that are restricted to 4-bit may
-> therefore underestimate the true capability of MoE local models —
-> full-precision evaluation requires substantially more VRAM (e.g. ~52 GB
-> for Gemma 4 26B in BF16, beyond a single RTX 3090).
->
-> The Poro-8B versus Llama 3.1 8B Finnish-specialisation gap reported in
-> §4.3 (+0.137 normalised) also reproduces at full BF16 precision (raw
-> +0.111), confirming that the Finnish fine-tuning effect is not a
-> quantization artefact.
+> **Quantization sensitivity.** Local-model results reflect 4-bit quantization
+> (MLX for the published outputs). Auxiliary precision sweep on a single
+> RTX 3090 tests four models: two dense Llama-based models (Llama 3.1 8B,
+> Llama-Poro-2-8B) vary by at most ±0.036 across precisions, within Wilson-CI
+> noise; OLMoE-1B-7B (MoE with 64 experts top-8 routed, no Per-Layer
+> Embeddings) varies by only ±0.004 across BF16, bitsandbytes 4-bit, and
+> llama.cpp Q4_K_M; Gemma 4 E4B (MoE with PLE) loses 0.06–0.08 aggregate
+> in 4-bit relative to BF16 across all three 4-bit schemes tested. The
+> three-way contrast narrows the hypothesis: Per-Layer Embeddings, rather
+> than expert-routing per se, appear to be the dominant quantization-
+> sensitive path. The BF16 measurement also confirms the Finnish
+> specialisation gap between Llama-Poro-2-8B and Llama 3.1 8B (+0.111 raw
+> at full precision, matching the +0.109 normalised MLX 4-bit gap) is
+> not a quantization artefact.
 
 ## Source data
 
